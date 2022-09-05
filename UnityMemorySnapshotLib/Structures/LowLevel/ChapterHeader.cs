@@ -3,7 +3,7 @@
 namespace UnityMemorySnapshotLib.Structures.LowLevel;
 
 [StructLayout(LayoutKind.Sequential, Pack = 2)]
-public struct EntryHeader
+public struct ChapterHeader
 {
     public EntryFormat Format;
     public uint BlockIndex;

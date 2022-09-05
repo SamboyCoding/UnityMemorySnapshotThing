@@ -5,128 +5,114 @@ using UnityMemorySnapshotLib.Utils;
 
 namespace UnityMemorySnapshotLib;
 
-public class SnapshotFile
+public class SnapshotFile : IDisposable
 {
-    private readonly Dictionary<EntryType, Entry> _entries;
-    
+    private readonly MemoryMappedFileSpanHelper<byte> _file;
+    private readonly Block[] _blocks;
+    private readonly Dictionary<EntryType, Chapter> _chaptersByEntryType;
+
     public unsafe SnapshotFile(string path)
     {
-        using var file = new MemoryMappedFileSpanHelper<byte>(path);
+        _file = new(path);
 
         //Check first and last word magics
-        var magic = file.As<uint>(..4);
-        var endMagic = file.As<uint>(^4..);
-        
-        // Console.WriteLine($"Read in {DateTime.Now - start:c}");
-        
-        // Console.WriteLine($"Magic: {magic:X8}");
-        // Console.WriteLine($"End Magic: {endMagic:X8}");
+        var magic = _file.As<uint>(..4);
+        var endMagic = _file.As<uint>(^4..);
 
         if(magic != MagicNumbers.HeaderMagic || endMagic != MagicNumbers.FooterMagic)
-        {
-            Console.WriteLine("Invalid file");
-            return;
-        }
+            throw new($"Magic number mismatch. Expected {MagicNumbers.HeaderMagic} and {MagicNumbers.FooterMagic} but got {magic} and {endMagic}");
 
-        var firstChapterOffset = (int) file.As<ulong>(^12..); //8 bytes before end magic
-        
-        // Console.WriteLine($"First chapter offset: {firstChapterOffset:X8}");
-        
-        var directoryMetadata = file.As<DirectoryMetadata>(firstChapterOffset..);
-        
-        // Console.WriteLine($"Directory metadata: {directoryMetadata}");
-        
+        var directoryMetadataOffset = (int) _file.As<ulong>(^12..); //8 bytes before end magic
+        var directoryMetadata = _file.As<DirectoryMetadata>(directoryMetadataOffset..);
+
         if(directoryMetadata.Magic != MagicNumbers.DirectoryMagic)
-        {
-            Console.WriteLine("Invalid directory magic.");
-            return;
-        }
+            throw new($"Directory magic number mismatch. Expected {MagicNumbers.DirectoryMagic} but got {directoryMetadata.Magic}");
 
         if (directoryMetadata.Version != MagicNumbers.SupportedDirectoryVersion)
-        {
-            Console.WriteLine("Unsupported directory version.");
-            return;
-        }
+            throw new($"Directory version mismatch. Expected {MagicNumbers.SupportedDirectoryVersion} but got {directoryMetadata.Version}");
 
-        var entriesOffset = firstChapterOffset + sizeof(DirectoryMetadata);
-
-        var blockSection = file.As<BlockSection>(directoryMetadata.BlocksOffset);
+        var blockSection = _file.As<BlockSection>(directoryMetadata.BlocksOffset);
 
         if (blockSection.Version != MagicNumbers.SupportedBlockSectionVersion)
-        {
-            Console.WriteLine("Unsupported block section version.");
-            return;
-        }
+            throw new($"Block section version mismatch. Expected {MagicNumbers.SupportedBlockSectionVersion} but got {blockSection.Version}");
 
         if (blockSection.Count < 1)
         {
-            Console.WriteLine("No blocks found.");
+            _blocks = Array.Empty<Block>();
+            _chaptersByEntryType = new();
             return;
         }
         
-        //Unity then returns the entriesOffset and the blocksOffset (+ 4 bytes for the version)
-        var entryOffsetCount = file.As<int>(entriesOffset);
+        var entryOffsetCount = directoryMetadata.EntriesCount;
 
         if (entryOffsetCount > (int) EntryType.Count)
         {
-            Console.WriteLine($"Decreasing entry offset count from {entryOffsetCount} to {EntryType.Count} to match entry type count.");
+            Console.WriteLine($"Warning: Decreasing entry offset count from {entryOffsetCount} to {EntryType.Count} to match entry type count.");
+            entryOffsetCount = (int)EntryType.Count;
         }
 
-        // var entryTypeToChapterOffset = new long[entryOffsetCount];
-        // var dataBlockOffsets = new long[blockSection.Count];
-
-        var startOfEntryOffsets = entriesOffset + sizeof(int);
+        var startOfEntryOffsets = directoryMetadataOffset + sizeof(DirectoryMetadata); //Start of entry offsets is right after directory metadata
         var endOfEntryOffsets = startOfEntryOffsets + entryOffsetCount * sizeof(long);
-        var entryTypeToChapterOffset = file.AsSpan<long>(startOfEntryOffsets..endOfEntryOffsets);
+        var entryTypeToChapterOffset = _file.AsSpan<long>(startOfEntryOffsets..endOfEntryOffsets);
         
         var startOfDataBlockOffsets = (int) directoryMetadata.BlocksOffset + sizeof(BlockSection);
         var endOfDataBlockOffsets = startOfDataBlockOffsets + blockSection.Count * sizeof(long);
-        var dataBlockOffsets = file.AsSpan<long>(startOfDataBlockOffsets..endOfDataBlockOffsets);
-        
-        // Console.WriteLine($"Entry offsets: {entryTypeToChapterOffset.ToCommaSeparatedHexString()}");
-        // Console.WriteLine($"Data block offsets: {dataBlockOffsets.ToCommaSeparatedHexString()}");
+        var dataBlockOffsets = _file.AsSpan<long>(startOfDataBlockOffsets..endOfDataBlockOffsets);
 
-        //First actual allocation :))
-        //Can't have an array of ref structs, so Block copies the offsets to an array
-        var blocks = new Block[dataBlockOffsets.Length];
+        _blocks = new Block[dataBlockOffsets.Length];
+        ReadBlocks(dataBlockOffsets);
+
+        _chaptersByEntryType = new();
+        ReadChapters(entryTypeToChapterOffset);
+    }
+
+    private unsafe void ReadBlocks(Span<long> dataBlockOffsets)
+    {
         for (var i = 0; i < dataBlockOffsets.Length; i++)
         {
-            var header = file.As<BlockHeader>(dataBlockOffsets[i]);
-            blocks[i] = new(header, file, (int)(dataBlockOffsets[i] + sizeof(BlockHeader)));
-        }
-        
-        // Console.WriteLine($"Read {blocks.Length} blocks with a total of {blocks.Sum(b => b.Offsets.Length)} offsets, representing a total of {blocks.Sum(b => (int) b.Header.TotalBytes)} bytes.");
-        
-        _entries = new();
-        for (var i = 0; i < entryTypeToChapterOffset.Length; i++)
-        {
-            if(entryTypeToChapterOffset[i] == 0)
-                continue;
-            
-            var header = file.As<EntryHeader>(entryTypeToChapterOffset[i]);
-            var entry = _entries[(EntryType) i] = new(header);
-            entry.Block = blocks[header.BlockIndex];
-
-            if (header.Format == EntryFormat.DynamicSizeElementArray)
-            {
-                var dataStart = (int) entryTypeToChapterOffset[i] + sizeof(EntryHeader);
-                var dataEnd = dataStart + (int) header.Count * sizeof(long);
-
-                entry.AdditionalEntryStorage = file.AsSpan<long>(dataStart..dataEnd).ToArray();
-                
-                // Console.WriteLine($"Read dynamic size element array of {entry.AdditionalEntryStorage!.Length} pointers for entry {(EntryType) i}, has blockIndex {header.BlockIndex}");
-            }
+            var header = _file.As<BlockHeader>(dataBlockOffsets[i]);
+            _blocks[i] = new(header, _file, (int)(dataBlockOffsets[i] + sizeof(BlockHeader)));
         }
     }
-    
-    public T ReadEntryAsStruct<T>(EntryType entryType) where T : struct 
-        => MemoryMarshal.Read<T>(ReadEntry(entryType));
 
-    public byte[] ReadEntry(EntryType entryType) => ReadEntry(entryType, 0, 1);
-
-    public byte[] ReadEntry(EntryType entryType, int startOffset, int count)
+    private void ReadChapters(Span<long> entryTypeToChapterOffset)
     {
-        var entryData = _entries[entryType];
+        for (var i = 0; i < entryTypeToChapterOffset.Length; i++)
+        {
+            if (entryTypeToChapterOffset[i] == 0)
+                continue;
+
+            _chaptersByEntryType[(EntryType)i] = ReadChapter((int)entryTypeToChapterOffset[i]);
+        }
+    }
+
+    private unsafe Chapter ReadChapter(int chapterOffset)
+    {
+        var header = _file.As<ChapterHeader>(chapterOffset);
+        var chapter = new Chapter(header)
+        {
+            Block = _blocks[header.BlockIndex]
+        };
+
+        if (header.Format == EntryFormat.DynamicSizeElementArray)
+        {
+            var dataStart = chapterOffset + sizeof(ChapterHeader);
+            var dataEnd = dataStart + (int)header.Count * sizeof(long);
+
+            chapter.AdditionalEntryStorage = _file.AsSpan<long>(dataStart..dataEnd).ToArray();
+        }
+
+        return chapter;
+    }
+
+    public T ReadChapterAsStruct<T>(EntryType entryType) where T : struct 
+        => MemoryMarshal.Read<T>(ReadChapter(entryType));
+
+    public byte[] ReadChapter(EntryType entryType) => ReadChapter(entryType, 0, 1);
+
+    public byte[] ReadChapter(EntryType entryType, int startOffset, int count)
+    {
+        var entryData = _chaptersByEntryType[entryType];
         var block = entryData.Block;
         var size = (int) entryData.ComputeByteSizeForEntryRange(startOffset, count, false);
 
@@ -147,10 +133,16 @@ public class SnapshotFile
             }
             case EntryFormat.DynamicSizeElementArray:
             {
-                return null;
+                throw new("Not implemented");
             }
             default:
                 throw new("Unknown entry format.");
         }
+    }
+
+    public void Dispose()
+    {
+        _file.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

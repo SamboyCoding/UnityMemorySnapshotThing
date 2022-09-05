@@ -1,12 +1,12 @@
 ﻿namespace UnityMemorySnapshotLib.Structures.LowLevel;
 
-public class Entry
+public class Chapter
 {
-    public EntryHeader Header;
+    public ChapterHeader Header;
     public long[]? AdditionalEntryStorage;
     public Block Block;
     
-    public Entry(EntryHeader header)
+    public Chapter(ChapterHeader header)
     {
         Header = header;
         AdditionalEntryStorage = null;
