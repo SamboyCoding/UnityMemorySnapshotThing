@@ -24,13 +24,19 @@ public class Chapter
                 return Header.EntriesMeta * (count - offset);
             case EntryFormat.DynamicSizeElementArray:
                 long size = 0;
-                if (count + offset == Count)
-                {
-                    var entryOffset = AdditionalEntryStorage![offset];
-                    size = (long)(Header.HeaderMeta - (ulong)entryOffset); //adding the size of the last element
-                }
+                //Additional entry storage gives us the offsets to the start of each element
+                
+                // if (count + offset == Count)
+                // {
+                //     //
+                //     var entryOffset = AdditionalEntryStorage![offset];
+                //     size = (long)(Header.HeaderMeta - (ulong)entryOffset); //adding the size of the last element
+                // }
+                if(offset == 0)
+                    //just get the (n - 1)th item as it gives the end of the nth element
+                    size = AdditionalEntryStorage![count - 1];
                 else
-                    size =(AdditionalEntryStorage![offset + count] - AdditionalEntryStorage[offset]);
+                    size = (AdditionalEntryStorage![offset + count - 1] - AdditionalEntryStorage[offset - 1]);
 
                 return size + (includeOffsetsMemory ? sizeof(long) * (count + 1) : 0);
             default:

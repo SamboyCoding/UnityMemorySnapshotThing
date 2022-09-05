@@ -19,15 +19,42 @@ public struct Block
     public byte[] Read(uint index, int length)
     {
         var startChunk = (uint) (index / Header.ChunkSize);
-        var startOffset = (uint) (index % Header.ChunkSize);
-        var bytesLeftInChunk = (uint) Header.ChunkSize - startOffset;
-        
-        if(length > bytesLeftInChunk)
-            throw new("Cross-chunk reading not implemented");
+        var offsetIntoFirstChunk = (uint) (index % Header.ChunkSize);
+        var bytesLeftInChunk = (uint) Header.ChunkSize - offsetIntoFirstChunk;
+
+        if (length > bytesLeftInChunk)
+        {
+            // We need to read from multiple chunks
+            return ReadMultipleChunks(startChunk, offsetIntoFirstChunk, length);
+        }
         
         var chunk = Offsets[startChunk];
-        var offset = (int) (chunk + startOffset);
+        var offset = (int) (chunk + offsetIntoFirstChunk);
         
         return _file.Span[offset..(offset + length)].ToArray();
+    }
+
+    private byte[] ReadMultipleChunks(uint startChunk, uint offsetIntoFirstChunk, int length)
+    {
+        var ret = new byte[length];
+        var bytesLeft = length;
+        
+        var offset = 0;
+        var currChunk = startChunk;
+        var chunkOffset = offsetIntoFirstChunk;
+
+        while (bytesLeft > 0)
+        {
+            var chunkStart = Offsets[currChunk];
+            var bytesToRead = Math.Min((int) Header.ChunkSize - (int) chunkOffset, bytesLeft);
+            var chunk = _file.Span[(int) (chunkStart + chunkOffset)..(int) (chunkStart + chunkOffset + bytesToRead)];
+            chunk.CopyTo(ret.AsSpan(offset));
+            offset += bytesToRead;
+            bytesLeft -= bytesToRead;
+            chunkOffset = 0;
+            currChunk++;
+        }
+
+        return ret;
     }
 }
