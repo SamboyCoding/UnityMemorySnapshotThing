@@ -1,8 +1,8 @@
 ﻿using System.Text;
-#pragma warning disable CS0169, CS0649 // Field never used, field never assigned
 
 namespace UnityMemorySnapshotLib.Structures;
 
+#pragma warning disable CS0169, CS0649 // Field never used, field never assigned
 // ReSharper disable UnassignedField.Global
 public unsafe struct ProfileTargetInfo
 {

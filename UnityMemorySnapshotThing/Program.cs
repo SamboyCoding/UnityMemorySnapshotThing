@@ -1,5 +1,4 @@
 ﻿using UnityMemorySnapshotLib;
-using UnityMemorySnapshotLib.Structures;
 
 namespace UnityMemorySnapshotThing;
 
@@ -16,14 +15,10 @@ public static class Program
         var filePath = args[0];
 
         using var file = new SnapshotFile(filePath);
-
-        //Get snapshot file version
-        var version = file.ReadChapterAsStruct<FormatVersion>(EntryType.Metadata_Version);
         
-        Console.WriteLine($"Snapshot file version: {version}");
-
-        var targetInfo = file.ReadChapterAsStruct<ProfileTargetInfo>(EntryType.ProfileTarget_Info);
-        
-        Console.WriteLine($"Target platform: {targetInfo}");
+        Console.WriteLine($"Snapshot file version: {file.SnapshotFormatVersion}");
+        Console.WriteLine($"Target platform: {file.ProfileTargetInfo}");
+        Console.WriteLine($"Memory stats: {file.ProfileTargetMemoryStats}");
+        Console.WriteLine($"VM info: {file.VirtualMachineInformation}");
     }
 }

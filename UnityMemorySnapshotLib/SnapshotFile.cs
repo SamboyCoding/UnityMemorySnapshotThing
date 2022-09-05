@@ -11,6 +11,11 @@ public class SnapshotFile : IDisposable
     private readonly Block[] _blocks;
     private readonly Dictionary<EntryType, Chapter> _chaptersByEntryType;
 
+    public ProfileTargetInfo ProfileTargetInfo => ReadChapterAsStruct<ProfileTargetInfo>(EntryType.ProfileTarget_Info);
+    public ProfileTargetMemoryStats ProfileTargetMemoryStats => ReadChapterAsStruct<ProfileTargetMemoryStats>(EntryType.ProfileTarget_MemoryStats);
+    public VirtualMachineInformation VirtualMachineInformation => ReadChapterAsStruct<VirtualMachineInformation>(EntryType.Metadata_VirtualMachineInformation);
+    public FormatVersion SnapshotFormatVersion => ReadChapterAsStruct<FormatVersion>(EntryType.Metadata_Version);
+
     public unsafe SnapshotFile(string path)
     {
         _file = new(path);
