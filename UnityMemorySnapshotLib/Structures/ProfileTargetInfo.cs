@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace UnityMemorySnapshotThing.Structures;
+namespace UnityMemorySnapshotLib.Structures;
 
 public unsafe struct ProfileTargetInfo
 {

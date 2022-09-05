@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotThing.Utils;
+﻿namespace UnityMemorySnapshotLib.Utils;
 
 public class LinkedRefStructList<T>
 {

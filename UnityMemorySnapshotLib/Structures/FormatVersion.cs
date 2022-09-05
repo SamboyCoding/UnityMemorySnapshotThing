@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotThing.Structures;
+﻿namespace UnityMemorySnapshotLib.Structures;
 
 public enum FormatVersion : uint
 {

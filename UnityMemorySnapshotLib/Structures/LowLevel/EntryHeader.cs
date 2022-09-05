@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace UnityMemorySnapshotThing.Structures.LowLevel;
+namespace UnityMemorySnapshotLib.Structures.LowLevel;
 
 [StructLayout(LayoutKind.Sequential, Pack = 2)]
 public struct EntryHeader

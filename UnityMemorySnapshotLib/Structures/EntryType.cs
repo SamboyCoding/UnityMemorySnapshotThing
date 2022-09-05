@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotThing.Structures.LowLevel;
+﻿namespace UnityMemorySnapshotLib.Structures;
 
 public enum EntryType : ushort
 {

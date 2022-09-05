@@ -1,6 +1,6 @@
-﻿using UnityMemorySnapshotThing.Utils;
+﻿using UnityMemorySnapshotLib.Utils;
 
-namespace UnityMemorySnapshotThing.Structures.LowLevel;
+namespace UnityMemorySnapshotLib.Structures.LowLevel;
 
 public struct Block
 {
