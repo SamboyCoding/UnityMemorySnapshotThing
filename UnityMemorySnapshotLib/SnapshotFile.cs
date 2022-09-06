@@ -21,10 +21,11 @@ public class SnapshotFile : IDisposable
     public DateTime CaptureDateTime => new(ReadChapterAsStruct<long>(EntryType.Metadata_RecordDate));
     public string[] NativeTypeNames => ReadStringArrayChapter(EntryType.NativeTypes_Name);
     public string[] NativeObjectNames => ReadStringArrayChapter(EntryType.NativeObjects_Name);
-    //Another dynamic array: ManagedHeapSections_Bytes
+    public byte[][] ManagedHeapSectionBytes => ReadValueTypeArrayChapter<byte>(EntryType.ManagedHeapSections_Bytes, 0, -1);
     public string[] TypeDescriptionNames => ReadStringArrayChapter(EntryType.TypeDescriptions_Name);
     public string[] TypeDescriptionAssemblies => ReadStringArrayChapter(EntryType.TypeDescriptions_Assembly);
-    //TypeDescriptions_FieldIndices and TypeDescriptions_StaticFieldBytes
+    public int[][] TypeDescriptionFieldIndices => ReadValueTypeArrayChapter<int>(EntryType.TypeDescriptions_FieldIndices, 0, -1);
+    public byte[][] TypeDescriptionStaticFieldBytes => ReadValueTypeArrayChapter<byte>(EntryType.TypeDescriptions_StaticFieldBytes, 0, -1);
     public string[] FieldDescriptionNames => ReadStringArrayChapter(EntryType.FieldDescriptions_Name);
 
     public unsafe SnapshotFile(string path)
@@ -158,7 +159,7 @@ public class SnapshotFile : IDisposable
                 
                 //AdditionalEntryStorage = offset of end of each element (exclusive)
                 var offsetIntoBlock = startOffset == 0 ? 0u : (uint)chapter.AdditionalEntryStorage![startOffset - 1];
-                return block.Read(0, size);
+                return block.Read(offsetIntoBlock, size);
             }
             default:
                 throw new("Unknown entry format.");
@@ -186,6 +187,31 @@ public class SnapshotFile : IDisposable
         
         for(var i = 1; i < count; i++)
             ret[i] = Encoding.UTF8.GetString(rawData, (int)offsets[startOffset + i - 1], (int)(offsets[startOffset + i] - offsets[startOffset + i - 1]));
+
+        return ret;
+    }
+
+    public T[][] ReadValueTypeArrayChapter<T>(EntryType entryType, int startOffset, int count) where T : unmanaged
+    {
+        var chapter = _chaptersByEntryType[entryType];
+
+        if (count == -1)
+            count = (int)chapter.Count;
+        
+        var rawData = ReadChapter(entryType, startOffset, count);
+        
+        var ret = new T[count][];
+        
+        //AdditionalEntryStorage = offset of end of each element (exclusive)
+        var offsets = chapter.AdditionalEntryStorage!;
+        
+        for(var i = 0; i < count; i++)
+        {
+            var offset = startOffset + i;
+            var firstElemPos = offset == 0 ? 0 : (int)offsets[offset - 1];
+            var numElements = (int)(offsets[offset] - firstElemPos);
+            ret[i] = MemoryMarshal.Cast<byte, T>(rawData.AsSpan(firstElemPos, numElements)).ToArray();
+        }
 
         return ret;
     }
