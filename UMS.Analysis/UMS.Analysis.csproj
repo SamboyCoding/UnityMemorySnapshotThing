@@ -1,15 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <OutputType>Exe</OutputType>
         <TargetFramework>net6.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\UMS.Analysis\UMS.Analysis.csproj" />
+      <ProjectReference Include="..\UMS.LowLevel\UMS.LowLevel.csproj" />
     </ItemGroup>
 
 </Project>

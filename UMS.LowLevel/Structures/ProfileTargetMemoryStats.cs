@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotLib.Structures;
+﻿namespace UMS.LowLevel.Structures;
 
 #pragma warning disable CS0169, CS0649 // Field never used, field never assigned
 // ReSharper disable UnassignedField.Global

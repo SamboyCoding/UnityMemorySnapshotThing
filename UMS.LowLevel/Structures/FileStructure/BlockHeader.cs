@@ -1,6 +1,6 @@
-﻿using UnityMemorySnapshotLib.Utils;
+﻿using UMS.LowLevel.Utils;
 
-namespace UnityMemorySnapshotLib.Structures.LowLevel;
+namespace UMS.LowLevel.Structures.FileStructure;
 
 public struct BlockHeader
 {

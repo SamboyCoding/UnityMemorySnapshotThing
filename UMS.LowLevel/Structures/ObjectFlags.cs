@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotLib.Structures;
+﻿namespace UMS.LowLevel.Structures;
 
 [Flags]
 public enum ObjectFlags

@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotLib.Structures;
+﻿namespace UMS.LowLevel.Structures;
 
 public enum ScriptingImplementation
 {

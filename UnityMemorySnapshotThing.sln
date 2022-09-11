@@ -2,12 +2,14 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityMemorySnapshotThing", "UnityMemorySnapshotThing\UnityMemorySnapshotThing.csproj", "{B958688F-DC8D-40C1-A8A8-64FF376FCF97}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityMemorySnapshotLib", "UnityMemorySnapshotLib\UnityMemorySnapshotLib.csproj", "{2D42B33D-9809-4CCA-8686-A91E1D4AD37B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UMS.LowLevel", "UMS.LowLevel\UMS.LowLevel.csproj", "{2D42B33D-9809-4CCA-8686-A91E1D4AD37B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{F11A27FD-B12F-4BEF-8A6F-38268685A979}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UMS.Analysis", "UMS.Analysis\UMS.Analysis.csproj", "{E09A6526-8F53-4D37-9AC4-6F333DFB0AEC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,5 +25,9 @@ Global
 		{2D42B33D-9809-4CCA-8686-A91E1D4AD37B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2D42B33D-9809-4CCA-8686-A91E1D4AD37B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2D42B33D-9809-4CCA-8686-A91E1D4AD37B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E09A6526-8F53-4D37-9AC4-6F333DFB0AEC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E09A6526-8F53-4D37-9AC4-6F333DFB0AEC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E09A6526-8F53-4D37-9AC4-6F333DFB0AEC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E09A6526-8F53-4D37-9AC4-6F333DFB0AEC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

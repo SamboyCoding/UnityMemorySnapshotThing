@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotLib;
+﻿namespace UMS.LowLevel;
 
 public static class MagicNumbers
 {

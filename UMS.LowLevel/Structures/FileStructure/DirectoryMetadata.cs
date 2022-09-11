@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace UnityMemorySnapshotLib.Structures.LowLevel;
+namespace UMS.LowLevel.Structures.FileStructure;
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 public struct DirectoryMetadata

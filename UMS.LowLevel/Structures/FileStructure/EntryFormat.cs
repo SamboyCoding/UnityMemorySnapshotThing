@@ -1,4 +1,4 @@
-﻿namespace UnityMemorySnapshotLib.Structures.LowLevel;
+﻿namespace UMS.LowLevel.Structures.FileStructure;
 
 public enum EntryFormat : ushort
 {

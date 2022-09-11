@@ -2,7 +2,7 @@
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 
-namespace UnityMemorySnapshotLib.Utils;
+namespace UMS.LowLevel.Utils;
 
 /// <summary>
 /// Class to wrap span-based file access to a memory mapped file. 
