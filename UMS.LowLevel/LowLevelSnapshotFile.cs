@@ -14,16 +14,18 @@ public class LowLevelSnapshotFile : IDisposable
 
     public ProfileTargetInfo ProfileTargetInfo => ReadChapterAsStruct<ProfileTargetInfo>(EntryType.ProfileTarget_Info);
     public ProfileTargetMemoryStats ProfileTargetMemoryStats => ReadChapterAsStruct<ProfileTargetMemoryStats>(EntryType.ProfileTarget_MemoryStats);
-    public VirtualMachineInformation VirtualMachineInformation => ReadChapterAsStruct<VirtualMachineInformation>(EntryType.Metadata_VirtualMachineInformation);
+    public VirtualMachineInformation VirtualMachineInformation { get; }
     public FormatVersion SnapshotFormatVersion => ReadChapterAsStruct<FormatVersion>(EntryType.Metadata_Version);
     public CaptureFlags CaptureFlags => ReadChapterAsStruct<CaptureFlags>(EntryType.Metadata_CaptureFlags);
     public byte[] UserMetadata => ReadChapterBody(EntryType.Metadata_UserMetadata);
     public DateTime CaptureDateTime => new(ReadChapterAsStruct<long>(EntryType.Metadata_RecordDate));
     public string[] NativeTypeNames => ReadStringArrayChapter(EntryType.NativeTypes_Name);
     public string[] NativeObjectNames => ReadStringArrayChapter(EntryType.NativeObjects_Name);
-    public Span<long> ManagedHeapSectionStartAddresses => ReadValueTypeChapter<long>(EntryType.ManagedHeapSections_StartAddress, 0, -1);
+    public Span<ulong> ManagedHeapSectionStartAddresses => ReadValueTypeChapter<ulong>(EntryType.ManagedHeapSections_StartAddress, 0, -1);
     public byte[][] ManagedHeapSectionBytes => ReadValueTypeArrayChapter<byte>(EntryType.ManagedHeapSections_Bytes, 0, -1);
     public string[] TypeDescriptionNames => ReadStringArrayChapter(EntryType.TypeDescriptions_Name);
+    public Span<ulong> TypeDescriptionInfoPointers => ReadValueTypeChapter<ulong>(EntryType.TypeDescriptions_TypeInfoAddress, 0, -1);
+    public Span<TypeFlags> TypeDescriptionFlags => ReadValueTypeChapter<TypeFlags>(EntryType.TypeDescriptions_Flags, 0, -1);
     public string[] TypeDescriptionAssemblies => ReadStringArrayChapter(EntryType.TypeDescriptions_Assembly);
     public int[][] TypeDescriptionFieldIndices => ReadValueTypeArrayChapter<int>(EntryType.TypeDescriptions_FieldIndices, 0, -1);
     public byte[][] TypeDescriptionStaticFieldBytes => ReadValueTypeArrayChapter<byte>(EntryType.TypeDescriptions_StaticFieldBytes, 0, -1);
@@ -58,12 +60,8 @@ public class LowLevelSnapshotFile : IDisposable
             throw new($"Block section version mismatch. Expected {MagicNumbers.SupportedBlockSectionVersion} but got {blockSection.Version}");
 
         if (blockSection.Count < 1)
-        {
-            _blocks = Array.Empty<Block>();
-            _chaptersByEntryType = new();
-            return;
-        }
-        
+            throw new("Snapshot may be empty or corrupt - no blocks found");
+
         var entryOffsetCount = directoryMetadata.EntriesCount;
 
         if (entryOffsetCount > (int) EntryType.Count)
@@ -85,6 +83,8 @@ public class LowLevelSnapshotFile : IDisposable
 
         _chaptersByEntryType = new();
         ReadMetadataForAllChapters(entryTypeToChapterOffset);
+        
+        VirtualMachineInformation = ReadChapterAsStruct<VirtualMachineInformation>(EntryType.Metadata_VirtualMachineInformation);
     }
 
     private unsafe void ReadAllBlocks(Span<long> dataBlockOffsets)
@@ -131,46 +131,56 @@ public class LowLevelSnapshotFile : IDisposable
         return chapter;
     }
 
+    public int GetChapterArrayLength(EntryType entryType)
+    {
+        if (!_chaptersByEntryType.TryGetValue(entryType, out var chapter))
+            return 0;
+
+        return (int)chapter.Count;
+    }
+    
     public T ReadChapterAsStruct<T>(EntryType entryType) where T : struct 
         => MemoryMarshal.Read<T>(ReadChapterBody(entryType));
 
     public byte[] ReadChapterBody(EntryType entryType) => ReadChapterBody(entryType, 0, 1);
+    
+    public bool TryReadChapterBodyAsSpan(EntryType type, int startOffset, int count, out Span<byte> span)
+    {
+        span = default;
+        if (!_chaptersByEntryType.TryGetValue(type, out var chapter))
+            return false;
+
+        var block = chapter.Block;
+
+        var start = (uint) chapter.GetOffsetIntoBlock((uint)startOffset);
+        var size = (int) chapter.ComputeByteSizeForEntryRange(startOffset, count, false);
+        
+        return block.TryReadAsSpan(start, size, out span);
+    }
 
     public byte[] ReadChapterBody(EntryType entryType, int startOffset, int count)
     {
         var chapter = _chaptersByEntryType[entryType];
         var block = chapter.Block;
+
+        var start = (uint) chapter.GetOffsetIntoBlock((uint)startOffset);
         var size = (int) chapter.ComputeByteSizeForEntryRange(startOffset, count, false);
 
-        switch (chapter.Header.Format)
-        {
-            case EntryFormat.SingleElement:
-            {
-                //header meta = offset into block
-                var offsetIntoBlock = (uint)chapter.Header.HeaderMeta;
-                return block.Read(offsetIntoBlock, size);
-            }
-            case EntryFormat.ConstantSizeElementArray:
-            {
-                //entries meta = size of element
-                var offsetIntoBlock = (uint) (chapter.Header.EntriesMeta * startOffset);
-                var endOffset = offsetIntoBlock + size;
-                return block.Read(offsetIntoBlock, (int)(endOffset - offsetIntoBlock));
-            }
-            case EntryFormat.DynamicSizeElementArray:
-            {
-                //We just return the raw data here, and interpret it later
-                
-                //AdditionalEntryStorage = offset of end of each element (exclusive)
-                var offsetIntoBlock = startOffset == 0 ? 0u : (uint)chapter.AdditionalEntryStorage![startOffset - 1];
-                return block.Read(offsetIntoBlock, size);
-            }
-            default:
-                throw new("Unknown entry format.");
-        }
+        return block.Read(start, size);
     }
 
     public string[] ReadStringArrayChapter(EntryType entryType) => ReadStringArrayChapter(entryType, 0, -1);
+
+    public string ReadSingleStringFromChapter(EntryType entryType, int index)
+    {
+        var chapter = _chaptersByEntryType[entryType];
+        
+        if(TryReadChapterBodyAsSpan(entryType, index, 1, out var span))
+            return Encoding.UTF8.GetString(span);
+
+        return ReadStringArrayChapter(entryType, index, 1)[0];
+    }
+    
     public string[] ReadStringArrayChapter(EntryType entryType, int startOffset, int count)
     {
         var chapter = _chaptersByEntryType[entryType];
@@ -187,7 +197,7 @@ public class LowLevelSnapshotFile : IDisposable
         if(startOffset == 0)
             ret[0] = Encoding.UTF8.GetString(rawData, 0, (int)offsets[0]);
         else
-            ret[0] = Encoding.UTF8.GetString(rawData, (int)offsets[startOffset - 1], (int)(offsets[startOffset] - offsets[startOffset - 1]));
+            ret[0] = Encoding.UTF8.GetString(rawData, 0, (int)(offsets[startOffset] - offsets[startOffset - 1]));
         
         for(var i = 1; i < count; i++)
             ret[i] = Encoding.UTF8.GetString(rawData, (int)offsets[startOffset + i - 1], (int)(offsets[startOffset + i] - offsets[startOffset + i - 1]));
@@ -198,9 +208,13 @@ public class LowLevelSnapshotFile : IDisposable
     public Span<T> ReadSingleValueTypeArrayChapterElement<T>(EntryType entryType, int offset) where T : unmanaged
     {
         var chapter = _chaptersByEntryType[entryType];
+
+        if (TryReadChapterBodyAsSpan(entryType, offset, 1, out var ret))
+            return MemoryMarshal.Cast<byte, T>(ret);
         
+        //Fall back to byte array
+        Console.WriteLine($"Warning: Falling back to byte array for single value type array chapter element of type {entryType}");
         var rawData = ReadChapterBody(entryType, offset, 1); //Future - Consider trying to read this as a span not a byte array
-        
         return MemoryMarshal.Cast<byte, T>(rawData);
     }
 
@@ -228,6 +242,8 @@ public class LowLevelSnapshotFile : IDisposable
 
         return ret;
     }
+
+    public T ReadSingleValueType<T>(EntryType entryType, int index) where T : unmanaged => ReadValueTypeChapter<T>(entryType, index, 1)[0];
     
     public Span<T> ReadValueTypeChapter<T>(EntryType entryType, int startOffset, int count) where T : unmanaged
     {
@@ -235,9 +251,13 @@ public class LowLevelSnapshotFile : IDisposable
 
         if (count == -1)
             count = (int)chapter.Count;
-        
-        var rawData = ReadChapterBody(entryType, startOffset, count);
 
+        if (TryReadChapterBodyAsSpan(entryType, startOffset, count, out var ret))
+            return MemoryMarshal.Cast<byte, T>(ret);
+        
+        //Fall back to byte array
+        Console.WriteLine($"Warning: Falling back to byte array for value type chapter of type {entryType}");
+        var rawData = ReadChapterBody(entryType, startOffset, count);
         return MemoryMarshal.Cast<byte, T>(rawData);
     }
 

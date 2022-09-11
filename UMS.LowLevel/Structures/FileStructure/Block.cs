@@ -4,16 +4,91 @@ namespace UMS.LowLevel.Structures.FileStructure;
 
 public struct Block
 {
-    private MemoryMappedFileSpanHelper<byte> _file;
+    private readonly MemoryMappedFileSpanHelper<byte> _file;
     
     public BlockHeader Header { get; }
     public long[] Offsets { get; }
+    
+    public MergedRange[] MergedRanges { get; }
+    
+    public long StartOffset => Offsets[0];
 
     public Block(BlockHeader header, MemoryMappedFileSpanHelper<byte> file, int start)
     {
         _file = file;
         Header = header;
         Offsets = header.GetOffsets(file, start).ToArray();
+
+        MergedRanges = Array.Empty<MergedRange>(); //Preemptively set this so we can call RangeFromOffset
+        if (Offsets.Length == 0)
+            return;
+
+        if (Offsets.Length == 1)
+        {
+            MergedRanges = new[] { RangeFromOffset(0, Offsets[0]) };
+            return;
+        }
+
+        //Merge offsets into contiguous ranges, allows zero-alloc reading where possible
+        MergedRanges = MergeRanges().ToArray();
+    }
+
+    private List<MergedRange> MergeRanges()
+    {
+        var ranges = new List<MergedRange>();
+        var currOffset = RangeFromOffset(0, Offsets[0]);
+        var index = 1;
+        var blockOffset = (int) Header.ChunkSize;
+
+        while (index < Offsets.Length)
+        {
+            var nextOffset = RangeFromOffset(blockOffset, Offsets[index]);
+            if (currOffset.FileEnd == nextOffset.FileStart)
+            {
+                //Merge
+                currOffset.Length += nextOffset.Length;
+                blockOffset += nextOffset.Length;
+            }
+            else
+            {
+                ranges.Add(currOffset);
+                currOffset = nextOffset;
+                blockOffset = nextOffset.BlockEnd;
+            }
+
+            index++;
+        }
+
+        ranges.Add(currOffset); //Add the last range
+        return ranges;
+    }
+
+    private MergedRange RangeFromOffset(int blockOffset, long fileOffset)
+    {
+        var start = (int)fileOffset;
+        
+        return new(blockOffset, start, (int)Header.ChunkSize);
+    }
+
+    public bool TryReadAsSpan(uint index, int length, out Span<byte> result)
+    {
+        result = default;
+        foreach (var range in MergedRanges)
+        {
+            if(index < range.BlockStart || index >= range.BlockEnd)
+                //In a different chunk
+                continue;
+            
+            var offset = (int)(index - range.BlockStart);
+            var remaining = range.Length - offset;
+            if (remaining < length)
+                return false;
+            
+            result = _file.Span.Slice(range.FileStart + offset, length);
+            return true;
+        }
+
+        return false;
     }
 
     public byte[] Read(uint index, int length)
@@ -56,5 +131,22 @@ public struct Block
         }
 
         return ret;
+    }
+
+    public struct MergedRange
+    {
+        public int BlockStart;
+        public int FileStart;
+        public int Length;
+        
+        public int BlockEnd => BlockStart + Length;
+        public int FileEnd => FileStart + Length;
+        
+        public MergedRange(int blockStart, int fileStart, int length)
+        {
+            BlockStart = blockStart;
+            FileStart = fileStart;
+            Length = length;
+        }
     }
 }

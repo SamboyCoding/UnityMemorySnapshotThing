@@ -13,7 +13,16 @@ public class Chapter
     }
 
     public uint Count => Header.Count;
-    
+
+    public ulong GetOffsetIntoBlock(uint startOffset) =>
+        Header.Format switch
+        {
+            EntryFormat.SingleElement => Header.HeaderMeta,
+            EntryFormat.ConstantSizeElementArray => Header.EntriesMeta * startOffset,
+            EntryFormat.DynamicSizeElementArray => startOffset == 0 ? 0u : (ulong)AdditionalEntryStorage![startOffset - 1],
+            _ => throw new("Invalid format")
+        };
+
     public long ComputeByteSizeForEntryRange(long offset, long count, bool includeOffsetsMemory)
     {
         switch (Header.Format)
