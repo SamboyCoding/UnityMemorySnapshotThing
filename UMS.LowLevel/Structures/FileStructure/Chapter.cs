@@ -30,7 +30,7 @@ public class Chapter
             case EntryFormat.SingleElement:
                 return Header.EntriesMeta;
             case EntryFormat.ConstantSizeElementArray:
-                return Header.EntriesMeta * (count - offset);
+                return Header.EntriesMeta * count;
             case EntryFormat.DynamicSizeElementArray:
                 long size = 0;
                 //Additional entry storage gives us the offsets to the start of each element

@@ -21,11 +21,12 @@ public class LowLevelSnapshotFile : IDisposable
     public DateTime CaptureDateTime => new(ReadChapterAsStruct<long>(EntryType.Metadata_RecordDate));
     public string[] NativeTypeNames => ReadStringArrayChapter(EntryType.NativeTypes_Name);
     public string[] NativeObjectNames => ReadStringArrayChapter(EntryType.NativeObjects_Name);
-    public Span<ulong> ManagedHeapSectionStartAddresses => ReadValueTypeChapter<ulong>(EntryType.ManagedHeapSections_StartAddress, 0, -1);
+    public ManagedHeapSection[] ManagedHeapSectionStartAddresses { get; }
     public byte[][] ManagedHeapSectionBytes => ReadValueTypeArrayChapter<byte>(EntryType.ManagedHeapSections_Bytes, 0, -1);
     public string[] TypeDescriptionNames => ReadStringArrayChapter(EntryType.TypeDescriptions_Name);
     public Span<ulong> TypeDescriptionInfoPointers => ReadValueTypeChapter<ulong>(EntryType.TypeDescriptions_TypeInfoAddress, 0, -1);
     public Span<TypeFlags> TypeDescriptionFlags => ReadValueTypeChapter<TypeFlags>(EntryType.TypeDescriptions_Flags, 0, -1);
+    public Span<int> TypeDescriptionIndices => ReadValueTypeChapter<int>(EntryType.TypeDescriptions_TypeIndex, 0, -1);
     public string[] TypeDescriptionAssemblies => ReadStringArrayChapter(EntryType.TypeDescriptions_Assembly);
     public int[][] TypeDescriptionFieldIndices => ReadValueTypeArrayChapter<int>(EntryType.TypeDescriptions_FieldIndices, 0, -1);
     public byte[][] TypeDescriptionStaticFieldBytes => ReadValueTypeArrayChapter<byte>(EntryType.TypeDescriptions_StaticFieldBytes, 0, -1);
@@ -85,6 +86,10 @@ public class LowLevelSnapshotFile : IDisposable
         ReadMetadataForAllChapters(entryTypeToChapterOffset);
         
         VirtualMachineInformation = ReadChapterAsStruct<VirtualMachineInformation>(EntryType.Metadata_VirtualMachineInformation);
+        ManagedHeapSectionStartAddresses = ReadValueTypeChapter<ulong>(EntryType.ManagedHeapSections_StartAddress, 0, -1).ToArray()
+            .Select((a, i) => new ManagedHeapSection {HeapIndex = i, VirtualAddress = a}).ToArray();
+        
+        Array.Sort(ManagedHeapSectionStartAddresses);
     }
 
     private unsafe void ReadAllBlocks(Span<long> dataBlockOffsets)
@@ -207,13 +212,11 @@ public class LowLevelSnapshotFile : IDisposable
 
     public Span<T> ReadSingleValueTypeArrayChapterElement<T>(EntryType entryType, int offset) where T : unmanaged
     {
-        var chapter = _chaptersByEntryType[entryType];
-
         if (TryReadChapterBodyAsSpan(entryType, offset, 1, out var ret))
             return MemoryMarshal.Cast<byte, T>(ret);
         
         //Fall back to byte array
-        Console.WriteLine($"Warning: Falling back to byte array for single value type array chapter element of type {entryType}");
+        Console.WriteLine($"Warning: Falling back to byte array for single value type array chapter element of type {entryType} offset {offset}");
         var rawData = ReadChapterBody(entryType, offset, 1); //Future - Consider trying to read this as a span not a byte array
         return MemoryMarshal.Cast<byte, T>(rawData);
     }

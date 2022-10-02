@@ -1,4 +1,6 @@
-﻿namespace UMS.Analysis.Structures;
+﻿using UMS.LowLevel.Structures;
+
+namespace UMS.Analysis.Structures;
 
 public ref struct ManagedObjectInfo
 {
@@ -10,6 +12,7 @@ public ref struct ManagedObjectInfo
     public int TypeDescriptionIndex;
     public int Size;
     public int RefCount;
+    public TypeFlags Flags;
 
     public Span<byte> Data;
 
@@ -25,6 +28,7 @@ public ref struct ManagedObjectInfo
         Size = -1;
         RefCount = -1;
         Data = default;
+        Flags = default;
     }
 
 
