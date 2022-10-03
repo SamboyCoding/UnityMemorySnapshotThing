@@ -1,9 +1,6 @@
-﻿using System.Runtime;
+﻿using System.Text;
 using UMS.Analysis;
-using UMS.Analysis.Structures;
 using UMS.Analysis.Structures.Objects;
-using UMS.LowLevel;
-using UMS.LowLevel.Structures;
 
 namespace UnityMemorySnapshotThing;
 
@@ -71,17 +68,23 @@ public static class Program
         //Find all the managed objects, filter to those which have a m_CachedObjectPtr field
         //Then filter to those for which that field is 0 (i.e. not pointing to a native object)
         //That gives the leaked managed shells.
-        Console.WriteLine($"Snapshot contains {file.AllManagedClassInstances.Count()} managed objects");
+        var ret = new StringBuilder();
+        var str = $"Snapshot contains {file.AllManagedClassInstances.Count()} managed objects";
+        Console.WriteLine(str);
+        ret.AppendLine(str);
 
         var filterStart = DateTime.Now;
 
         var unityEngineObjects = file.AllManagedClassInstances.Where(i => i.InheritsFromUnityEngineObject(file)).ToArray();
-        
-        Console.WriteLine($"Of those, {unityEngineObjects.Length} inherit from UnityEngine.Object (filtered in {(DateTime.Now - filterStart).TotalMilliseconds} ms)");
+
+        str = $"Of those, {unityEngineObjects.Length} inherit from UnityEngine.Object (filtered in {(DateTime.Now - filterStart).TotalMilliseconds} ms)";
+        Console.WriteLine(str);
+        ret.AppendLine(str);
         
         var detectStart = DateTime.Now;
 
         int numLeaked = 0;
+        var leakedTypes = new Dictionary<string, int>();
         foreach (var managedClassInstance in unityEngineObjects)
         {
             var fields = file.GetInstanceFieldInfoForTypeIndex(managedClassInstance.TypeInfo.TypeIndex);
@@ -100,14 +103,32 @@ public static class Program
                     if (integerFieldValue.Value == 0)
                     {
                         var typeName = file.GetTypeName(managedClassInstance.TypeInfo.TypeIndex);
-                        Console.WriteLine($"Found leaked managed object of type: {typeName} at memory address 0x{managedClassInstance.ObjectAddress:X}");
-                        Console.WriteLine($"    Retention Path: {managedClassInstance.GetFirstObservedRetentionPath(file)}");
+
+                        str = $"Found leaked managed object of type: {typeName} at memory address 0x{managedClassInstance.ObjectAddress:X}";
+                        Console.WriteLine(str);
+                        ret.AppendLine(str);
+
+                        str = $"    Retention Path: {managedClassInstance.GetFirstObservedRetentionPath(file)}";
+                        Console.WriteLine(str);
+                        ret.AppendLine(str);
+                        
+                        leakedTypes[typeName] = leakedTypes.GetValueOrDefault(typeName) + 1;
+                        
                         numLeaked++;
                     }
                 }
             }
         }
+
+        str = $"Finished detection in {(DateTime.Now - detectStart).TotalMilliseconds} ms. {numLeaked} of those are leaked managed shells";
+        Console.WriteLine(str);
+        ret.AppendLine(str);
         
-        Console.WriteLine($"Finished detection in {(DateTime.Now - detectStart).TotalMilliseconds} ms. {numLeaked} of those are leaked managed shells");
+        var leakedTypesSorted = leakedTypes.OrderByDescending(kvp => kvp.Value).ToArray();
+        
+        str = $"Leaked types by count: \n{string.Join("\n", leakedTypesSorted.Select(kvp => $"{kvp.Value} x {kvp.Key}"))}";
+        ret.AppendLine(str);
+        
+        File.WriteAllText("leaked_objects.txt", ret.ToString());
     }
 }
