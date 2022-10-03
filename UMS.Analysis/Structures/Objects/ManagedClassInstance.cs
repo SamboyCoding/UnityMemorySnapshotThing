@@ -20,15 +20,20 @@ public readonly struct ManagedClassInstance
 
     private ManagedClassInstance TypedParent => _parent == null ? default : Unsafe.Unbox<ManagedClassInstance>(_parent!);
 
+    public bool IsArray => (TypeDescriptionFlags & TypeFlags.Array) == TypeFlags.Array;
+    
+    public bool IsValueType => (TypeDescriptionFlags & TypeFlags.ValueType) == TypeFlags.ValueType;
+
     public ManagedClassInstance(SnapshotFile file, int typeDescriptionIndex, TypeFlags flags, int size, Span<byte> data, ManagedClassInstance parent, int depth, LoadedReason loadedReason, int fieldIndexOrArrayOffset = int.MinValue)
     {
-        if ((flags & TypeFlags.ValueType) != TypeFlags.ValueType)
+        TypeDescriptionFlags = flags;
+        
+        if (!IsValueType)
             throw new("This constructor can only be used for value types");
         
         _parent = parent;
         ObjectAddress = 0;
         TypeInfo = file.GetTypeInfo(typeDescriptionIndex);
-        TypeDescriptionFlags = flags;
         IsInitialized = true;
         LoadedReason = loadedReason;
         FieldIndexOrArrayOffset = fieldIndexOrArrayOffset;
@@ -71,7 +76,7 @@ public readonly struct ManagedClassInstance
 
         var data = info.Data;
 
-        if ((TypeDescriptionFlags & TypeFlags.Array) == TypeFlags.Array)
+        if (IsArray)
         {
             //TODO array items
             Fields = Array.Empty<IFieldValue>();
@@ -92,11 +97,11 @@ public readonly struct ManagedClassInstance
             return Array.Empty<IFieldValue>();
         }
 
-        var fieldInfo = file.GetFieldInfoForTypeIndex(TypeInfo.TypeIndex);
+        var fieldInfo = file.GetInstanceFieldInfoForTypeIndex(TypeInfo.TypeIndex);
 
         var fields = new IFieldValue[fieldInfo.Length];
         
-        var isValueType = (TypeDescriptionFlags & TypeFlags.ValueType) == TypeFlags.ValueType;
+        var isValueType = IsValueType;
 
         for (var index = 0; index < fieldInfo.Length; index++)
         {
@@ -147,7 +152,10 @@ public readonly struct ManagedClassInstance
         return false;
     }
 
-    public bool InheritsFromUnityEngineObject(SnapshotFile file)
+    public bool InheritsFromUnityEngineObject(SnapshotFile file) 
+        => InheritsFrom(file, file.WellKnownTypes.UnityEngineObject);
+
+    public bool InheritsFrom(SnapshotFile file, int baseTypeIndex)
     {
         if((TypeDescriptionFlags & TypeFlags.Array) == TypeFlags.Array)
             return false;
@@ -155,7 +163,7 @@ public readonly struct ManagedClassInstance
         var baseClass = TypeInfo.BaseTypeIndex;
         while (baseClass != -1)
         {
-            if (baseClass == file.WellKnownTypes.UnityEngineObject)
+            if (baseClass == baseTypeIndex)
                 return true;
 
             baseClass = file.GetTypeInfo(baseClass).BaseTypeIndex;
@@ -193,16 +201,25 @@ public readonly struct ManagedClassInstance
                 sb.Append("GC Root");
                 return;
             case LoadedReason.StaticField:
-                //TODO
+            {
+                var staticFieldDeclaringType = file.StaticFieldsToOwningTypes[child.FieldIndexOrArrayOffset];
+                var fieldList = file.GetStaticFieldInfoForTypeIndex(staticFieldDeclaringType);
+                var parentName = file.GetTypeName(staticFieldDeclaringType);
+                var field = fieldList.First(f => f.FieldIndex == child.FieldIndexOrArrayOffset);
+                sb.Append("Static Field ").Append(file.GetFieldName(field.FieldIndex)).Append(" of ");
+                sb.Append(parentName);
                 break;
+            }
             case LoadedReason.InstanceField:
-                var fieldList = file.GetFieldInfoForTypeIndex(parent.TypeInfo.TypeIndex);
+            {
+                var fieldList = file.GetInstanceFieldInfoForTypeIndex(parent.TypeInfo.TypeIndex);
                 var parentName = file.GetTypeName(parent.TypeInfo.TypeIndex);
                 var field = fieldList.First(f => f.FieldIndex == child.FieldIndexOrArrayOffset);
                 sb.Append("Field ").Append(file.GetFieldName(field.FieldIndex)).Append(" of ");
                 sb.Append(parentName).Append(" at 0x").Append(parent.ObjectAddress.ToString("X"));
                 sb.Append(" <- ");
                 break;
+            }
             case LoadedReason.ArrayElement:
                 //TODO
                 break;

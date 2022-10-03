@@ -57,40 +57,10 @@ public static class Program
         //
         // Console.WriteLine($"Querying large dynamic arrays took {(DateTime.Now - start).TotalMilliseconds} ms\n");
 
-        CrawlManagedObjects(file);
+        file.LoadManagedObjectsFromGcRoots();
+        file.LoadManagedObjectsFromStaticFields();
         
         FindLeakedUnityObjects(file);
-    }
-
-    private static void CrawlManagedObjects(SnapshotFile file)
-    {
-        //Start with GC Handles
-        var gcHandles = file.GcHandles;
-        
-        //Each of those is a pointer into a managed heap section which can be mapped to the data in that file
-        //At that address there will be an object header which allows us to find the type index or type description
-        //It also then contains the instance fields (which we can parse with type data), and we can potentially crawl to other objects using connection data
-        //We want to find all the objects so we can then iterate on them easily
-
-        var validCount = 0;
-        var start = DateTime.Now;
-        var rootObjects = new List<ManagedClassInstance>(gcHandles.Length);
-        
-        Console.WriteLine($"Processing {gcHandles.Length} GC roots...");
-        // GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
-        foreach (var gcHandle in gcHandles)
-        {
-            rootObjects.Add(file.GetManagedClassInstance(gcHandle)!.Value);
-            
-            validCount++;
-            
-            // if(validCount % 1000 == 0)
-                // Console.WriteLine($"Processed {validCount} GC roots in {(DateTime.Now - start).TotalMilliseconds} ms");
-        }
-
-        GCSettings.LatencyMode = GCLatencyMode.Interactive;
-        
-        Console.WriteLine($"Found {validCount} valid GC roots out of {gcHandles.Length} total in {(DateTime.Now - start).TotalMilliseconds} ms");
     }
     
     private static void FindLeakedUnityObjects(SnapshotFile file)
@@ -114,7 +84,7 @@ public static class Program
         int numLeaked = 0;
         foreach (var managedClassInstance in unityEngineObjects)
         {
-            var fields = file.GetFieldInfoForTypeIndex(managedClassInstance.TypeInfo.TypeIndex);
+            var fields = file.GetInstanceFieldInfoForTypeIndex(managedClassInstance.TypeInfo.TypeIndex);
             for (var fieldNumber = 0; fieldNumber < fields.Length; fieldNumber++)
             {
                 var basicFieldInfoCache = fields[fieldNumber];

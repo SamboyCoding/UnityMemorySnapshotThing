@@ -9,4 +9,8 @@ public struct BasicFieldInfoCache
     public TypeFlags Flags;
     public int FieldOffset;
     public int FieldTypeSize;
+    
+    public bool IsValueType => (Flags & TypeFlags.ValueType) == TypeFlags.ValueType;
+    
+    public bool IsArray => (Flags & TypeFlags.Array) == TypeFlags.Array;
 }

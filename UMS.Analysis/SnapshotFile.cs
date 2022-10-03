@@ -16,9 +16,12 @@ public class SnapshotFile : LowLevelSnapshotFile
 
     public readonly Dictionary<int, int> TypeIndexIndices = new(); // TypeIndex -> Index in the TypeIndex array. What.
 
+    public readonly Dictionary<int, int> StaticFieldsToOwningTypes = new();
+
     public readonly WellKnownTypeHelper WellKnownTypes;
     
     private readonly Dictionary<int, BasicFieldInfoCache[]> _nonStaticFieldIndicesByTypeIndex = new();
+    private readonly Dictionary<int, BasicFieldInfoCache[]> _staticFieldIndicesByTypeIndex = new();
     
     private readonly Dictionary<int, BasicTypeInfoCache> _typeInfoCacheByTypeIndex = new();
 
@@ -43,6 +46,74 @@ public class SnapshotFile : LowLevelSnapshotFile
         var indices = TypeDescriptionIndices;
         for (var i = 0; i < indices.Length; i++)
             TypeIndexIndices.Add(indices[i], i);
+    }
+
+    public void LoadManagedObjectsFromGcRoots()
+    {
+        var gcRoots = GcHandles;
+        var start = DateTime.Now;
+        
+        Console.WriteLine($"Processing {gcRoots.Length} GC roots...");
+        foreach (var gcHandle in gcRoots) 
+            GetOrCreateManagedClassInstance(gcHandle);
+        
+        Console.WriteLine($"Found {_managedClassInstanceCache.Count} managed objects in {(DateTime.Now - start).TotalMilliseconds}ms");
+    }
+
+    public void LoadManagedObjectsFromStaticFields()
+    {
+        var allStaticFields = ReadValueTypeArrayChapter<byte>(EntryType.TypeDescriptions_StaticFieldBytes, 0, -1);
+
+        var start = DateTime.Now;
+        var initialCount = _managedClassInstanceCache.Count;
+        
+        Console.WriteLine($"Processing static field info for {allStaticFields.Length} types...");
+        for (var typeIndex = 0; typeIndex < allStaticFields.Length; typeIndex++)
+        {
+            var typeFieldBytes = allStaticFields[typeIndex].AsSpan();
+            if (typeFieldBytes.Length == 0)
+                continue;
+
+            var typeInfo = GetTypeInfo(typeIndex);
+            var staticFields = GetStaticFieldInfoForTypeIndex(typeIndex);
+            
+            foreach (var field in staticFields)
+            {
+                StaticFieldsToOwningTypes[field.FieldIndex] = typeIndex;
+                if(field.IsValueType)
+                    continue; //TODO
+                
+                if(field.IsArray)
+                    continue;
+
+                var fieldOffset = field.FieldOffset;
+                
+                if(fieldOffset < 0)
+                    continue; //Generics, mainly
+                
+                var fieldPointer = MemoryMarshal.Read<ulong>(typeFieldBytes[fieldOffset..]);
+                if (fieldPointer == 0)
+                    continue;
+                
+                GetOrCreateManagedClassInstance(fieldPointer, reason: LoadedReason.StaticField, fieldOrArrayIdx: field.FieldIndex);
+            }
+        }
+        
+        Console.WriteLine($"Found {_managedClassInstanceCache.Count - initialCount} additional managed objects from static fields in {(DateTime.Now - start).TotalMilliseconds}ms");
+    }
+
+    public ManagedClassInstance? GetOrCreateManagedClassInstance(ulong address, ManagedClassInstance? parent = null, int depth = 0, LoadedReason reason = LoadedReason.GcRoot, int fieldOrArrayIdx = int.MinValue)
+    {
+        if (_managedClassInstanceCache.TryGetValue(address, out var ret))
+            return ret;
+        
+        var info = ParseManagedObjectInfo(address);
+        if (!info.IsKnownType)
+            return null;
+
+        var instance = new ManagedClassInstance(this, info, parent, depth, reason, fieldOrArrayIdx);
+        _managedClassInstanceCache[address] = instance;
+        return instance;
     }
 
     public RawManagedObjectInfo ParseManagedObjectInfo(ulong address)
@@ -77,20 +148,6 @@ public class SnapshotFile : LowLevelSnapshotFile
         _managedObjectInfoCache.Add(address, info);
 
         return info;
-    }
-    
-    public ManagedClassInstance? GetManagedClassInstance(ulong address, ManagedClassInstance? parent = null, int depth = 0, LoadedReason reason = LoadedReason.GcRoot, int fieldOrArrayIdx = int.MinValue)
-    {
-        if (_managedClassInstanceCache.TryGetValue(address, out var ret))
-            return ret;
-        
-        var info = ParseManagedObjectInfo(address);
-        if (!info.IsKnownType)
-            return null;
-
-        var instance = new ManagedClassInstance(this, info, parent, depth, reason, fieldOrArrayIdx);
-        _managedClassInstanceCache[address] = instance;
-        return instance;
     }
 
     public int SizeOfObjectInBytes(RawManagedObjectInfo info, Span<byte> heap)
@@ -247,30 +304,43 @@ public class SnapshotFile : LowLevelSnapshotFile
         return info;
     }
 
-    public BasicFieldInfoCache[] GetFieldInfoForTypeIndex(int typeIndex)
+    public BasicFieldInfoCache[] GetInstanceFieldInfoForTypeIndex(int typeIndex)
     {
         if(_nonStaticFieldIndicesByTypeIndex.TryGetValue(typeIndex, out var indices))
             return indices;
         
-        _nonStaticFieldIndicesByTypeIndex[typeIndex] = indices = WalkFieldInfoForTypeIndex(typeIndex).ToArray();
+        _nonStaticFieldIndicesByTypeIndex[typeIndex] = indices = WalkFieldInfoForTypeIndex(typeIndex, false).ToArray();
+
+        return indices;
+    }
+    
+    public BasicFieldInfoCache[] GetStaticFieldInfoForTypeIndex(int typeIndex)
+    {
+        if(_staticFieldIndicesByTypeIndex.TryGetValue(typeIndex, out var indices))
+            return indices;
+        
+        _staticFieldIndicesByTypeIndex[typeIndex] = indices = WalkFieldInfoForTypeIndex(typeIndex, true).ToArray();
 
         return indices;
     }
 
-    public IEnumerable<BasicFieldInfoCache> WalkFieldInfoForTypeIndex(int typeIndex)
+    public IEnumerable<BasicFieldInfoCache> WalkFieldInfoForTypeIndex(int typeIndex, bool wantStatic)
     {
-        var baseTypeIndex = ReadSingleValueType<int>(EntryType.TypeDescriptions_BaseOrElementTypeIndex, typeIndex);
-        if (baseTypeIndex != -1)
+        if (!wantStatic)
         {
-            foreach (var i in GetFieldInfoForTypeIndex(baseTypeIndex))
-                yield return i;
+            var baseTypeIndex = ReadSingleValueType<int>(EntryType.TypeDescriptions_BaseOrElementTypeIndex, typeIndex);
+            if (baseTypeIndex != -1)
+            {
+                foreach (var i in GetInstanceFieldInfoForTypeIndex(baseTypeIndex))
+                    yield return i;
+            }
         }
 
         var fieldIndices = ReadSingleValueTypeArrayChapterElement<int>(EntryType.TypeDescriptions_FieldIndices, typeIndex).ToArray();
         foreach (var fieldIndex in fieldIndices)
         {
             var isStatic = ReadSingleValueType<bool>(EntryType.FieldDescriptions_IsStatic, fieldIndex);
-            if (isStatic)
+            if (isStatic != wantStatic)
                 continue;
             
             var fieldOffset = ReadSingleValueType<int>(EntryType.FieldDescriptions_Offset, fieldIndex);

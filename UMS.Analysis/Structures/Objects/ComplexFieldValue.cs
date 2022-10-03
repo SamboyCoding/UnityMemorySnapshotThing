@@ -38,7 +38,7 @@ public struct ComplexFieldValue : IFieldValue
             return;
         }
 
-        var mci = file.GetManagedClassInstance(ptr, parent, depth, LoadedReason.InstanceField, info.FieldIndex);
+        var mci = file.GetOrCreateManagedClassInstance(ptr, parent, depth, LoadedReason.InstanceField, info.FieldIndex);
 
         if (mci == null)
         {
