@@ -25,6 +25,8 @@ public class SnapshotFile : LowLevelSnapshotFile
     private Dictionary<ulong, RawManagedObjectInfo> _managedObjectInfoCache = new();
     
     private Dictionary<ulong, ManagedClassInstance> _managedClassInstanceCache = new();
+    
+    public IEnumerable<ManagedClassInstance> AllManagedClassInstances => _managedClassInstanceCache.Values;
 
     public SnapshotFile(string path) : base(path)
     {
@@ -73,7 +75,7 @@ public class SnapshotFile : LowLevelSnapshotFile
         return info;
     }
     
-    public ManagedClassInstance? GetManagedClassInstance(ulong address, ManagedClassInstance parent, int depth)
+    public ManagedClassInstance? GetManagedClassInstance(ulong address, ManagedClassInstance? parent = null, int depth = 0)
     {
         if (_managedClassInstanceCache.TryGetValue(address, out var ret))
             return ret;

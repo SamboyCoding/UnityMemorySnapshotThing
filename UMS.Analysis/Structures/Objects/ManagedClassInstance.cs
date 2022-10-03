@@ -132,4 +132,21 @@ public readonly struct ManagedClassInstance
 
         return false;
     }
+
+    public bool InheritsFromUnityEngineObject(SnapshotFile file)
+    {
+        if((TypeDescriptionFlags & TypeFlags.Array) == TypeFlags.Array)
+            return false;
+        
+        var parent = TypeInfo.BaseTypeIndex;
+        while (parent != -1)
+        {
+            if (parent == file.WellKnownTypes.UnityEngineObject)
+                return true;
+
+            parent = file.GetTypeInfo(parent).BaseTypeIndex;
+        }
+
+        return false;
+    }
 }

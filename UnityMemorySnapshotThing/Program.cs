@@ -58,6 +58,8 @@ public static class Program
         // Console.WriteLine($"Querying large dynamic arrays took {(DateTime.Now - start).TotalMilliseconds} ms\n");
 
         CrawlManagedObjects(file);
+        
+        FindLeakedUnityObjects(file);
     }
 
     private static void CrawlManagedObjects(SnapshotFile file)
@@ -78,21 +80,12 @@ public static class Program
         // GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
         foreach (var gcHandle in gcHandles)
         {
-            var info = file.ParseManagedObjectInfo(gcHandle);
-        
-            if(!info.IsKnownType)
-                continue;
-
-            // var type = file.ReadSingleStringFromChapter(EntryType.TypeDescriptions_Name, info.TypeDescriptionIndex);
-        
-            // Console.WriteLine($"Size {info.Size}, type {type} ({info.TypeDescriptionIndex})");
-            
-            rootObjects.Add(new(file, info));
+            rootObjects.Add(file.GetManagedClassInstance(gcHandle)!.Value);
             
             validCount++;
             
-            if(validCount % 1000 == 0)
-                Console.WriteLine($"Processed {validCount} GC roots in {(DateTime.Now - start).TotalMilliseconds} ms");
+            // if(validCount % 1000 == 0)
+                // Console.WriteLine($"Processed {validCount} GC roots in {(DateTime.Now - start).TotalMilliseconds} ms");
         }
 
         GCSettings.LatencyMode = GCLatencyMode.Interactive;
@@ -100,7 +93,7 @@ public static class Program
         Console.WriteLine($"Found {validCount} valid GC roots out of {gcHandles.Length} total in {(DateTime.Now - start).TotalMilliseconds} ms");
     }
     
-    private static void FindLeakedUnityObjects(LowLevelSnapshotFile file)
+    private static void FindLeakedUnityObjects(SnapshotFile file)
     {
         var start = DateTime.Now;
         Console.WriteLine("Finding leaked Unity objects...");
@@ -108,6 +101,42 @@ public static class Program
         //Find all the managed objects, filter to those which have a m_CachedObjectPtr field
         //Then filter to those for which that field is 0 (i.e. not pointing to a native object)
         //That gives the leaked managed shells.
+        Console.WriteLine($"Snapshot contains {file.AllManagedClassInstances.Count()} managed objects");
+
+        var filterStart = DateTime.Now;
+
+        var unityEngineObjects = file.AllManagedClassInstances.Where(i => i.InheritsFromUnityEngineObject(file)).ToArray();
         
+        Console.WriteLine($"Of those, {unityEngineObjects.Length} inherit from UnityEngine.Object (filtered in {(DateTime.Now - filterStart).TotalMilliseconds} ms)");
+        
+        var detectStart = DateTime.Now;
+
+        int numLeaked = 0;
+        foreach (var managedClassInstance in unityEngineObjects)
+        {
+            var fields = file.GetFieldInfoForTypeIndex(managedClassInstance.TypeInfo.TypeIndex);
+            for (var fieldNumber = 0; fieldNumber < fields.Length; fieldNumber++)
+            {
+                var basicFieldInfoCache = fields[fieldNumber];
+                var name = file.ReadSingleStringFromChapter(EntryType.FieldDescriptions_Name, basicFieldInfoCache.FieldIndex);
+
+                if (name == "m_CachedPtr")
+                {
+                    var value = managedClassInstance.Fields[fieldNumber];
+                    
+                    if(value is not IntegerFieldValue integerFieldValue)
+                        throw new Exception("Expected integer field value");
+                    
+                    if (integerFieldValue.Value == 0)
+                    {
+                        var typeName = file.ReadSingleStringFromChapter(EntryType.TypeDescriptions_Name, managedClassInstance.TypeInfo.TypeIndex);
+                        Console.WriteLine($"Found leaked managed object of type: {typeName}");
+                        numLeaked++;
+                    }
+                }
+            }
+        }
+        
+        Console.WriteLine($"Finished detection in {(DateTime.Now - detectStart).TotalMilliseconds} ms. {numLeaked} of those are leaked managed shells");
     }
 }
