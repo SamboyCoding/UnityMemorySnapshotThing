@@ -118,7 +118,7 @@ public static class Program
             for (var fieldNumber = 0; fieldNumber < fields.Length; fieldNumber++)
             {
                 var basicFieldInfoCache = fields[fieldNumber];
-                var name = file.ReadSingleStringFromChapter(EntryType.FieldDescriptions_Name, basicFieldInfoCache.FieldIndex);
+                var name = file.GetFieldName(basicFieldInfoCache.FieldIndex);
 
                 if (name == "m_CachedPtr")
                 {
@@ -129,8 +129,9 @@ public static class Program
                     
                     if (integerFieldValue.Value == 0)
                     {
-                        var typeName = file.ReadSingleStringFromChapter(EntryType.TypeDescriptions_Name, managedClassInstance.TypeInfo.TypeIndex);
+                        var typeName = file.GetTypeName(managedClassInstance.TypeInfo.TypeIndex);
                         Console.WriteLine($"Found leaked managed object of type: {typeName} at memory address 0x{managedClassInstance.ObjectAddress:X}");
+                        Console.WriteLine($"    Retention Path: {managedClassInstance.GetFirstObservedRetentionPath(file)}");
                         numLeaked++;
                     }
                 }

@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using System.Text;
 using UMS.LowLevel.Structures;
 
 namespace UMS.Analysis.Structures.Objects;
@@ -6,17 +7,20 @@ namespace UMS.Analysis.Structures.Objects;
 public readonly struct ManagedClassInstance
 {
     private readonly object? _parent;
-    
     public readonly ulong ObjectAddress;
+    
     public readonly BasicTypeInfoCache TypeInfo;
     public readonly IFieldValue[] Fields;
+    
     public readonly TypeFlags TypeDescriptionFlags;
+    public int FieldIndexOrArrayOffset { get; init; }
     
     private readonly bool IsInitialized;
+    public readonly LoadedReason LoadedReason;
 
     private ManagedClassInstance TypedParent => _parent == null ? default : Unsafe.Unbox<ManagedClassInstance>(_parent!);
 
-    public ManagedClassInstance(SnapshotFile file, int typeDescriptionIndex, TypeFlags flags, int size, Span<byte> data, ManagedClassInstance parent, int depth)
+    public ManagedClassInstance(SnapshotFile file, int typeDescriptionIndex, TypeFlags flags, int size, Span<byte> data, ManagedClassInstance parent, int depth, LoadedReason loadedReason, int fieldIndexOrArrayOffset = int.MinValue)
     {
         if ((flags & TypeFlags.ValueType) != TypeFlags.ValueType)
             throw new("This constructor can only be used for value types");
@@ -26,6 +30,11 @@ public readonly struct ManagedClassInstance
         TypeInfo = file.GetTypeInfo(typeDescriptionIndex);
         TypeDescriptionFlags = flags;
         IsInitialized = true;
+        LoadedReason = loadedReason;
+        FieldIndexOrArrayOffset = fieldIndexOrArrayOffset;
+        
+        if(LoadedReason != LoadedReason.GcRoot && FieldIndexOrArrayOffset == int.MinValue)
+            throw new("FieldIndexOrArrayOffset must be set for non-GcRoot instances");
 
         if (IsEnumType(file))
         {
@@ -47,13 +56,18 @@ public readonly struct ManagedClassInstance
         Fields = ReadFields(file, data, depth);
     }
     
-    public ManagedClassInstance(SnapshotFile file, RawManagedObjectInfo info, ManagedClassInstance? parent = null, int depth = 0)
+    public ManagedClassInstance(SnapshotFile file, RawManagedObjectInfo info, ManagedClassInstance? parent = null, int depth = 0, LoadedReason loadedReason = LoadedReason.GcRoot, int fieldIndexOrArrayOffset = int.MinValue)
     {
         _parent = parent;
         ObjectAddress = info.SelfAddress;
         TypeInfo = file.GetTypeInfo(info.TypeDescriptionIndex);
         TypeDescriptionFlags = info.Flags;
         IsInitialized = true;
+        LoadedReason = loadedReason;
+        FieldIndexOrArrayOffset = fieldIndexOrArrayOffset;
+        
+        if(LoadedReason != LoadedReason.GcRoot && FieldIndexOrArrayOffset == int.MinValue)
+            throw new("FieldIndexOrArrayOffset must be set for non-GcRoot instances");
 
         var data = info.Data;
 
@@ -138,15 +152,62 @@ public readonly struct ManagedClassInstance
         if((TypeDescriptionFlags & TypeFlags.Array) == TypeFlags.Array)
             return false;
         
-        var parent = TypeInfo.BaseTypeIndex;
-        while (parent != -1)
+        var baseClass = TypeInfo.BaseTypeIndex;
+        while (baseClass != -1)
         {
-            if (parent == file.WellKnownTypes.UnityEngineObject)
+            if (baseClass == file.WellKnownTypes.UnityEngineObject)
                 return true;
 
-            parent = file.GetTypeInfo(parent).BaseTypeIndex;
+            baseClass = file.GetTypeInfo(baseClass).BaseTypeIndex;
         }
 
         return false;
+    }
+
+    public string GetFirstObservedRetentionPath(SnapshotFile file)
+    {
+        var name = file.GetTypeName(TypeInfo.TypeIndex);
+
+        var sb = new StringBuilder(name);
+        sb.Append(" at 0x").Append(ObjectAddress.ToString("X"));
+        sb.Append(" (target) <- ");
+
+        var parent = TypedParent;
+        AppendRetentionReason(sb, file, this, parent);
+        
+        while (parent.IsInitialized)
+        {
+            var child = parent;
+            parent = child.TypedParent;
+            AppendRetentionReason(sb, file, child, parent);
+        }
+
+        return sb.ToString();
+    }
+
+    private void AppendRetentionReason(StringBuilder sb, SnapshotFile file, ManagedClassInstance child, ManagedClassInstance parent)
+    {
+        switch (child.LoadedReason)
+        {
+            case LoadedReason.GcRoot:
+                sb.Append("GC Root");
+                return;
+            case LoadedReason.StaticField:
+                //TODO
+                break;
+            case LoadedReason.InstanceField:
+                var fieldList = file.GetFieldInfoForTypeIndex(parent.TypeInfo.TypeIndex);
+                var parentName = file.GetTypeName(parent.TypeInfo.TypeIndex);
+                var field = fieldList.First(f => f.FieldIndex == child.FieldIndexOrArrayOffset);
+                sb.Append("Field ").Append(file.GetFieldName(field.FieldIndex)).Append(" of ");
+                sb.Append(parentName).Append(" at 0x").Append(parent.ObjectAddress.ToString("X"));
+                sb.Append(" <- ");
+                break;
+            case LoadedReason.ArrayElement:
+                //TODO
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(child), "Invalid LoadedReason");
+        }
     }
 }

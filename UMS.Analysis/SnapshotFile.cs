@@ -22,10 +22,14 @@ public class SnapshotFile : LowLevelSnapshotFile
     
     private readonly Dictionary<int, BasicTypeInfoCache> _typeInfoCacheByTypeIndex = new();
 
-    private Dictionary<ulong, RawManagedObjectInfo> _managedObjectInfoCache = new();
+    private readonly Dictionary<ulong, RawManagedObjectInfo> _managedObjectInfoCache = new();
     
-    private Dictionary<ulong, ManagedClassInstance> _managedClassInstanceCache = new();
+    private readonly Dictionary<ulong, ManagedClassInstance> _managedClassInstanceCache = new();
     
+    private readonly Dictionary<int, string> _typeNamesByTypeIndex = new();
+    
+    private readonly Dictionary<int, string> _fieldNamesByFieldIndex = new();
+
     public IEnumerable<ManagedClassInstance> AllManagedClassInstances => _managedClassInstanceCache.Values;
 
     public SnapshotFile(string path) : base(path)
@@ -75,7 +79,7 @@ public class SnapshotFile : LowLevelSnapshotFile
         return info;
     }
     
-    public ManagedClassInstance? GetManagedClassInstance(ulong address, ManagedClassInstance? parent = null, int depth = 0)
+    public ManagedClassInstance? GetManagedClassInstance(ulong address, ManagedClassInstance? parent = null, int depth = 0, LoadedReason reason = LoadedReason.GcRoot, int fieldOrArrayIdx = int.MinValue)
     {
         if (_managedClassInstanceCache.TryGetValue(address, out var ret))
             return ret;
@@ -84,7 +88,7 @@ public class SnapshotFile : LowLevelSnapshotFile
         if (!info.IsKnownType)
             return null;
 
-        var instance = new ManagedClassInstance(this, info, parent, depth);
+        var instance = new ManagedClassInstance(this, info, parent, depth, reason, fieldOrArrayIdx);
         _managedClassInstanceCache[address] = instance;
         return instance;
     }
@@ -283,5 +287,23 @@ public class SnapshotFile : LowLevelSnapshotFile
                 FieldOffset = fieldOffset,
             };
         }
+    }
+
+    public string GetTypeName(int typeIndex)
+    {
+        if (_typeNamesByTypeIndex.TryGetValue(typeIndex, out var ret))
+            return ret;
+
+        _typeNamesByTypeIndex[typeIndex] = ret = ReadSingleStringFromChapter(EntryType.TypeDescriptions_Name, typeIndex);
+        return ret;
+    }
+    
+    public string GetFieldName(int fieldIndex)
+    {
+        if (_fieldNamesByFieldIndex.TryGetValue(fieldIndex, out var ret))
+            return ret;
+
+        _fieldNamesByFieldIndex[fieldIndex] = ret = ReadSingleStringFromChapter(EntryType.FieldDescriptions_Name, fieldIndex);
+        return ret;
     }
 }

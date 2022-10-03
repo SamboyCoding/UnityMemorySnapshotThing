@@ -22,8 +22,8 @@ public struct ComplexFieldValue : IFieldValue
             var size = info.FieldTypeSize;
             if (size > 0) //Have observed a negative size (-8), MIGHT be for pointers to value types, so we'll fall back to the below logic.
             {
-                var valueTypeData = data[..size];
-                Value = new(file, info.TypeDescriptionIndex, info.Flags, size, data, parent, depth);
+                var vtInst = new ManagedClassInstance(file, info.TypeDescriptionIndex, info.Flags, size, data, parent, depth, LoadedReason.InstanceField, info.FieldIndex);
+                Value = vtInst;
                 return;
             }
         }
@@ -38,7 +38,7 @@ public struct ComplexFieldValue : IFieldValue
             return;
         }
 
-        var mci = file.GetManagedClassInstance(ptr, parent, depth);
+        var mci = file.GetManagedClassInstance(ptr, parent, depth, LoadedReason.InstanceField, info.FieldIndex);
 
         if (mci == null)
         {
