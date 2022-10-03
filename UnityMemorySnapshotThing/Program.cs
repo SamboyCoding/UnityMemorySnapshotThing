@@ -130,7 +130,7 @@ public static class Program
                     if (integerFieldValue.Value == 0)
                     {
                         var typeName = file.ReadSingleStringFromChapter(EntryType.TypeDescriptions_Name, managedClassInstance.TypeInfo.TypeIndex);
-                        Console.WriteLine($"Found leaked managed object of type: {typeName}");
+                        Console.WriteLine($"Found leaked managed object of type: {typeName} at memory address 0x{managedClassInstance.ObjectAddress:X}");
                         numLeaked++;
                     }
                 }

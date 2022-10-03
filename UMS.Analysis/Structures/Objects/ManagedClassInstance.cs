@@ -6,8 +6,8 @@ namespace UMS.Analysis.Structures.Objects;
 public readonly struct ManagedClassInstance
 {
     private readonly object? _parent;
-    private readonly ulong _objectAddress;
-
+    
+    public readonly ulong ObjectAddress;
     public readonly BasicTypeInfoCache TypeInfo;
     public readonly IFieldValue[] Fields;
     public readonly TypeFlags TypeDescriptionFlags;
@@ -22,7 +22,7 @@ public readonly struct ManagedClassInstance
             throw new("This constructor can only be used for value types");
         
         _parent = parent;
-        _objectAddress = 0;
+        ObjectAddress = 0;
         TypeInfo = file.GetTypeInfo(typeDescriptionIndex);
         TypeDescriptionFlags = flags;
         IsInitialized = true;
@@ -50,7 +50,7 @@ public readonly struct ManagedClassInstance
     public ManagedClassInstance(SnapshotFile file, RawManagedObjectInfo info, ManagedClassInstance? parent = null, int depth = 0)
     {
         _parent = parent;
-        _objectAddress = info.SelfAddress;
+        ObjectAddress = info.SelfAddress;
         TypeInfo = file.GetTypeInfo(info.TypeDescriptionIndex);
         TypeDescriptionFlags = info.Flags;
         IsInitialized = true;
@@ -124,7 +124,7 @@ public readonly struct ManagedClassInstance
         var parent = TypedParent;
         while (parent.IsInitialized)
         {
-            if (parent._objectAddress == _objectAddress)
+            if (parent.ObjectAddress == ObjectAddress)
                 return true;
             
             parent = parent.TypedParent;
