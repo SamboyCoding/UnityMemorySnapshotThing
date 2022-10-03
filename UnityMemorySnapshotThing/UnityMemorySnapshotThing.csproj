@@ -5,8 +5,8 @@
         <TargetFramework>net6.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <ServerGarbageCollection>true</ServerGarbageCollection>
+        <DebugType>embedded</DebugType>
     </PropertyGroup>
 
     <ItemGroup>
