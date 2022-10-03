@@ -87,7 +87,8 @@ public class LowLevelSnapshotFile : IDisposable
         
         VirtualMachineInformation = ReadChapterAsStruct<VirtualMachineInformation>(EntryType.Metadata_VirtualMachineInformation);
         ManagedHeapSectionStartAddresses = ReadValueTypeChapter<ulong>(EntryType.ManagedHeapSections_StartAddress, 0, -1).ToArray()
-            .Select((a, i) => new ManagedHeapSection {HeapIndex = i, VirtualAddress = a}).ToArray();
+            .Select((a, i) => new ManagedHeapSection(a, ReadChapterBody(EntryType.ManagedHeapSections_Bytes, i, 1)))
+            .ToArray();
         
         Array.Sort(ManagedHeapSectionStartAddresses);
     }
@@ -216,7 +217,7 @@ public class LowLevelSnapshotFile : IDisposable
             return MemoryMarshal.Cast<byte, T>(ret);
         
         //Fall back to byte array
-        Console.WriteLine($"Warning: Falling back to byte array for single value type array chapter element of type {entryType} offset {offset}");
+        // Console.WriteLine($"Warning: Falling back to byte array for single value type array chapter element of type {entryType} offset {offset}");
         var rawData = ReadChapterBody(entryType, offset, 1); //Future - Consider trying to read this as a span not a byte array
         return MemoryMarshal.Cast<byte, T>(rawData);
     }

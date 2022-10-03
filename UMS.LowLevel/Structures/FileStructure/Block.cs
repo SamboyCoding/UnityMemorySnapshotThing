@@ -73,22 +73,21 @@ public struct Block
     public bool TryReadAsSpan(uint index, int length, out Span<byte> result)
     {
         result = default;
-        foreach (var range in MergedRanges)
-        {
-            if(index < range.BlockStart || index >= range.BlockEnd)
-                //In a different chunk
-                continue;
-            
-            var offset = (int)(index - range.BlockStart);
-            var remaining = range.Length - offset;
-            if (remaining < length)
-                return false;
-            
-            result = _file.Span.Slice(range.FileStart + offset, length);
-            return true;
-        }
 
-        return false;
+        var relevantBlock = BinarySearchForRelevantChunk(MergedRanges, (int)index);
+        if (relevantBlock == -1)
+            //No block found containing index
+            return false;
+
+        var range = MergedRanges[relevantBlock];
+
+        var offset = (int)(index - range.BlockStart);
+        var remaining = range.Length - offset;
+        if (remaining < length)
+            return false;
+
+        result = _file.Span.Slice(range.FileStart + offset, length);
+        return true;
     }
 
     public byte[] Read(uint index, int length)
@@ -132,21 +131,42 @@ public struct Block
 
         return ret;
     }
+    
+    private static int BinarySearchForRelevantChunk(MergedRange[] ranges, int offset)
+    {
+        var first = 0;
+        var last = ranges.Length - 1;
+        do
+        {
+            var mid = first + (last - first) / 2;
+
+            var range = ranges[mid];
+            if(offset < range.BlockEnd && offset >= range.BlockStart)
+                return mid;
+            
+            if (offset >= range.BlockEnd)
+                first = mid + 1;
+            else
+                last = mid - 1;
+        } while (first <= last);       
+        return -1;
+    }
 
     public struct MergedRange
     {
         public int BlockStart;
         public int FileStart;
         public int Length;
-        
-        public int BlockEnd => BlockStart + Length;
-        public int FileEnd => FileStart + Length;
+        public int BlockEnd;
+        public int FileEnd;
         
         public MergedRange(int blockStart, int fileStart, int length)
         {
             BlockStart = blockStart;
             FileStart = fileStart;
             Length = length;
+            BlockEnd = blockStart + length;
+            FileEnd = fileStart + length;
         }
     }
 }

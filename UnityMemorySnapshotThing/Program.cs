@@ -1,4 +1,7 @@
-﻿using UMS.Analysis;
+﻿using System.Runtime;
+using UMS.Analysis;
+using UMS.Analysis.Structures;
+using UMS.Analysis.Structures.Objects;
 using UMS.LowLevel;
 using UMS.LowLevel.Structures;
 
@@ -68,20 +71,33 @@ public static class Program
         //We want to find all the objects so we can then iterate on them easily
 
         var validCount = 0;
+        var start = DateTime.Now;
+        var rootObjects = new List<ManagedClassInstance>(gcHandles.Length);
+        
+        Console.WriteLine($"Processing {gcHandles.Length} GC roots...");
+        // GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
         foreach (var gcHandle in gcHandles)
         {
-            var info = file.GetManagedObjectInfo(gcHandle);
+            var info = file.ParseManagedObjectInfo(gcHandle);
         
             if(!info.IsKnownType)
                 continue;
 
-            var type = file.ReadSingleStringFromChapter(EntryType.TypeDescriptions_Name, info.TypeDescriptionIndex);
+            // var type = file.ReadSingleStringFromChapter(EntryType.TypeDescriptions_Name, info.TypeDescriptionIndex);
         
             // Console.WriteLine($"Size {info.Size}, type {type} ({info.TypeDescriptionIndex})");
+            
+            rootObjects.Add(new(file, info));
+            
             validCount++;
+            
+            if(validCount % 1000 == 0)
+                Console.WriteLine($"Processed {validCount} GC roots in {(DateTime.Now - start).TotalMilliseconds} ms");
         }
+
+        GCSettings.LatencyMode = GCLatencyMode.Interactive;
         
-        Console.WriteLine($"Found {validCount} valid GC roots out of {gcHandles.Length} total");
+        Console.WriteLine($"Found {validCount} valid GC roots out of {gcHandles.Length} total in {(DateTime.Now - start).TotalMilliseconds} ms");
     }
     
     private static void FindLeakedUnityObjects(LowLevelSnapshotFile file)

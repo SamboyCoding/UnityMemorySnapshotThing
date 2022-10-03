@@ -1,5 +1,7 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using UMS.Analysis.Structures;
+using UMS.Analysis.Structures.Objects;
 using UMS.LowLevel;
 using UMS.LowLevel.Structures;
 
@@ -15,64 +17,90 @@ public class SnapshotFile : LowLevelSnapshotFile
     public readonly Dictionary<int, int> TypeIndexIndices = new(); // TypeIndex -> Index in the TypeIndex array. What.
 
     public readonly WellKnownTypeHelper WellKnownTypes;
+    
+    private readonly Dictionary<int, BasicFieldInfoCache[]> _nonStaticFieldIndicesByTypeIndex = new();
+    
+    private readonly Dictionary<int, BasicTypeInfoCache> _typeInfoCacheByTypeIndex = new();
+
+    private Dictionary<ulong, RawManagedObjectInfo> _managedObjectInfoCache = new();
+    
+    private Dictionary<ulong, ManagedClassInstance> _managedClassInstanceCache = new();
 
     public SnapshotFile(string path) : base(path)
     {
         WellKnownTypes = new(this);
-        
+
         var pointers = TypeDescriptionInfoPointers;
-        for (var i = 0; i < pointers.Length; i++) 
+        for (var i = 0; i < pointers.Length; i++)
             TypeIndicesByPointer.Add(pointers[i], i);
 
         var indices = TypeDescriptionIndices;
-        for (var i = 0; i < indices.Length; i++) 
+        for (var i = 0; i < indices.Length; i++)
             TypeIndexIndices.Add(indices[i], i);
     }
-    
-    public ManagedObjectInfo GetManagedObjectInfo(ulong address)
+
+    public RawManagedObjectInfo ParseManagedObjectInfo(ulong address)
     {
-        var info = new ManagedObjectInfo();
+        if (_managedObjectInfoCache.TryGetValue(address, out var ret))
+            return ret;
+        
+        var info = new RawManagedObjectInfo();
         if (!TryGetSpanForHeapAddress(address, out var heap))
             return info;
 
-        info.TypeInfoAddress = ReadPointer(ref heap);
-        // info.TypeDescriptionIndex = TypeIndicesByPointer[info.TypeInfoAddress];
+        info.TypeInfoAddress = ReadPointer(heap);
 
         if (!TypeIndicesByPointer.TryGetValue(info.TypeInfoAddress, out info.TypeDescriptionIndex))
         {
             //Try and read at that pointer instead
             if (!TryGetSpanForHeapAddress(info.TypeInfoAddress, out var typeInfoSpan))
                 return new();
-            
-            info.TypeInfoAddress = ReadPointer(ref typeInfoSpan);
+
+            info.TypeInfoAddress = ReadPointer(typeInfoSpan);
             TypeIndicesByPointer.TryGetValue(info.TypeInfoAddress, out info.TypeDescriptionIndex);
-            
-            if(!info.IsKnownType)
+
+            if (!info.IsKnownType)
                 throw new($"Failed to resolve type for object at {address:X}");
         }
 
         info.Flags = ReadSingleValueType<TypeFlags>(EntryType.TypeDescriptions_Flags, info.TypeDescriptionIndex);
         info.Size = SizeOfObjectInBytes(info, heap);
-        info.Data = heap[..info.Size];
+        info.Data = heap[..info.Size].ToArray();
         info.SelfAddress = address;
+        
+        _managedObjectInfoCache.Add(address, info);
 
         return info;
     }
+    
+    public ManagedClassInstance? GetManagedClassInstance(ulong address, ManagedClassInstance parent, int depth)
+    {
+        if (_managedClassInstanceCache.TryGetValue(address, out var ret))
+            return ret;
+        
+        var info = ParseManagedObjectInfo(address);
+        if (!info.IsKnownType)
+            return null;
 
-    public int SizeOfObjectInBytes(ManagedObjectInfo info, Span<byte> heap)
+        var instance = new ManagedClassInstance(this, info, parent, depth);
+        _managedClassInstanceCache[address] = instance;
+        return instance;
+    }
+
+    public int SizeOfObjectInBytes(RawManagedObjectInfo info, Span<byte> heap)
     {
         if (info.Flags.HasFlag(TypeFlags.Array))
             return GetObjectSizeFromArrayInBytes(info, heap);
-        
-        if(info.TypeDescriptionIndex == WellKnownTypes.String)
+
+        if (info.TypeDescriptionIndex == WellKnownTypes.String)
             return GetObjectSizeFromStringInBytes(info, heap);
-        
+
         return ReadSingleValueType<int>(EntryType.TypeDescriptions_Size, info.TypeDescriptionIndex);
     }
 
-    private int GetObjectSizeFromStringInBytes(ManagedObjectInfo info, Span<byte> heap)
+    private int GetObjectSizeFromStringInBytes(RawManagedObjectInfo info, Span<byte> heap)
     {
-        heap = heap[VirtualMachineInformation.PointerSize..]; //Add one pointer to skip the type pointer
+        heap = heap[VirtualMachineInformation.ObjectHeaderSize..]; //Skip object header
         var length = MemoryMarshal.Read<int>(heap);
 
         if (length < 0 || length * 2u > heap.Length)
@@ -80,11 +108,11 @@ public class SnapshotFile : LowLevelSnapshotFile
             Console.WriteLine($"Warning - String length is invalid: {length}");
             return 0;
         }
-        
-        return VirtualMachineInformation.ObjectHeaderSize + 1 + length * 2 + 2; //Add one byte for the length, and two bytes for the null terminator
+
+        return VirtualMachineInformation.ObjectHeaderSize + 4 + length * 2 + 2; //Add four bytes for the length, and two bytes for the null terminator
     }
 
-    private int GetObjectSizeFromArrayInBytes(ManagedObjectInfo info, Span<byte> heap)
+    private int GetObjectSizeFromArrayInBytes(RawManagedObjectInfo info, Span<byte> heap)
     {
         var arrayLength = ReadArrayLength(info, heap);
 
@@ -102,27 +130,27 @@ public class SnapshotFile : LowLevelSnapshotFile
         var ai = TypeIndexIndices[elementTypeIndex];
         var flags = ReadSingleValueType<TypeFlags>(EntryType.TypeDescriptions_Flags, ai);
         var isValueType = flags.HasFlag(TypeFlags.ValueType);
-        
+
         //Ok now we can get the size of the elements in the array - either VT size or pointer size for ref types
         var elementSize = isValueType ? ReadSingleValueType<int>(EntryType.TypeDescriptions_Size, ai) : VirtualMachineInformation.PointerSize;
 
         return VirtualMachineInformation.ArrayHeaderSize + elementSize * arrayLength;
     }
 
-    private int ReadArrayLength(ManagedObjectInfo info, Span<byte> heap)
+    private int ReadArrayLength(RawManagedObjectInfo info, Span<byte> heap)
     {
         var heapTemp = heap[VirtualMachineInformation.ArrayBoundsOffsetInHeader..]; //Seek to the bounds offset
-        var bounds = ReadPointer(ref heapTemp);
+        var bounds = ReadPointer(heapTemp);
 
         if (bounds == 0)
             return MemoryMarshal.Read<int>(heap[VirtualMachineInformation.ArraySizeOffsetInHeader..]); //If there are no bounds, just read the size
-        
+
         //Otherwise, we need to read the bounds
         if (!TryGetSpanForHeapAddress(bounds, out var boundsHeap))
             return 0;
 
         var length = 1;
-        var rank = (int) (info.Flags & TypeFlags.ArrayRankMask) >> 16;
+        var rank = (int)(info.Flags & TypeFlags.ArrayRankMask) >> 16;
         for (var i = 0; i < rank; i++)
         {
             length *= MemoryMarshal.Read<int>(boundsHeap);
@@ -132,7 +160,7 @@ public class SnapshotFile : LowLevelSnapshotFile
         return length;
     }
 
-    public ulong ReadPointer(ref Span<byte> from)
+    public ulong ReadPointer(Span<byte> from)
     {
         var ret = VirtualMachineInformation.PointerSize switch
         {
@@ -151,31 +179,107 @@ public class SnapshotFile : LowLevelSnapshotFile
         var sections = ManagedHeapSectionStartAddresses;
         heapSection = default;
 
-        for (var i = sections.Length - 1; i >= 0; i--)
+        var sectionIdx = BinarySearchForRelevantHeapSection(ptr);
+        if (sectionIdx == -1)
+            return false;
+
+        var section = sections[sectionIdx];
+
+        //Move start of span to the offset relative to the start of the heap section
+        var offset = ptr - section.VirtualAddress;
+
+        if (offset >= int.MaxValue)
         {
-            if (sections[i].VirtualAddress <= ptr)
-            {
-                //Move start of span to the offset relative to the start of the heap section
-                var offset = ptr - sections[i].VirtualAddress;
-
-                if (offset >= int.MaxValue)
-                {
-                    //more than 2GiB above the current heap section -> probably not managed heap
-                    break;
-                }
-
-                var intOffset = (int)offset;
-                var section = ReadSingleValueTypeArrayChapterElement<byte>(EntryType.ManagedHeapSections_Bytes, sections[i].HeapIndex);
-                
-                if (section.Length < intOffset)
-                    break;
-                
-                heapSection = section[intOffset..];
-
-                break;
-            }
+            //more than 2GiB above the current heap section -> probably not managed heap
+            return false;
         }
 
-        return !heapSection.IsEmpty;
+        var intOffset = (int)offset;
+        var sectionSpan = section.Heap.AsSpan();
+
+        if (sectionSpan.Length < intOffset)
+            return false;
+
+        heapSection = sectionSpan[intOffset..];
+
+        return true;
+    }
+
+    private int BinarySearchForRelevantHeapSection(ulong address)
+    {
+        var first = 0;
+        var last = ManagedHeapSectionStartAddresses.Length - 1;
+        do
+        {
+            var mid = first + (last - first) / 2;
+
+            var range = ManagedHeapSectionStartAddresses[mid];
+            if (address < range.VirtualAddressEnd && address >= range.VirtualAddress)
+                return mid;
+
+            if (address >= range.VirtualAddressEnd)
+                first = mid + 1;
+            else
+                last = mid - 1;
+        } while (first <= last);
+
+        return -1;
+    }
+
+    public BasicTypeInfoCache GetTypeInfo(int typeIndex)
+    {
+        if (_typeInfoCacheByTypeIndex.TryGetValue(typeIndex, out var ret))
+            return ret;
+        
+        var info = new BasicTypeInfoCache
+        {
+            TypeIndex = typeIndex,
+            BaseTypeIndex = ReadSingleValueType<int>(EntryType.TypeDescriptions_BaseOrElementTypeIndex, typeIndex)
+        };
+
+        _typeInfoCacheByTypeIndex[typeIndex] = info;
+        return info;
+    }
+
+    public BasicFieldInfoCache[] GetFieldInfoForTypeIndex(int typeIndex)
+    {
+        if(_nonStaticFieldIndicesByTypeIndex.TryGetValue(typeIndex, out var indices))
+            return indices;
+        
+        _nonStaticFieldIndicesByTypeIndex[typeIndex] = indices = WalkFieldInfoForTypeIndex(typeIndex).ToArray();
+
+        return indices;
+    }
+
+    public IEnumerable<BasicFieldInfoCache> WalkFieldInfoForTypeIndex(int typeIndex)
+    {
+        var baseTypeIndex = ReadSingleValueType<int>(EntryType.TypeDescriptions_BaseOrElementTypeIndex, typeIndex);
+        if (baseTypeIndex != -1)
+        {
+            foreach (var i in GetFieldInfoForTypeIndex(baseTypeIndex))
+                yield return i;
+        }
+
+        var fieldIndices = ReadSingleValueTypeArrayChapterElement<int>(EntryType.TypeDescriptions_FieldIndices, typeIndex).ToArray();
+        foreach (var fieldIndex in fieldIndices)
+        {
+            var isStatic = ReadSingleValueType<bool>(EntryType.FieldDescriptions_IsStatic, fieldIndex);
+            if (isStatic)
+                continue;
+            
+            var fieldOffset = ReadSingleValueType<int>(EntryType.FieldDescriptions_Offset, fieldIndex);
+            var type = ReadSingleValueType<int>(EntryType.FieldDescriptions_TypeIndex, fieldIndex);
+            var typeFlags = ReadSingleValueType<TypeFlags>(EntryType.TypeDescriptions_Flags, type);
+            var typeSize = ReadSingleValueType<int>(EntryType.TypeDescriptions_Size, type);
+            
+            yield return new()
+            {
+                TypeDescriptionIndex = type,
+                Flags = typeFlags,
+                FieldTypeSize = typeSize,
+                FieldIndex = fieldIndex,
+                FieldOffset = fieldOffset,
+            };
+        }
     }
 }

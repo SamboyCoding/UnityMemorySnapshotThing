@@ -2,7 +2,7 @@
 
 namespace UMS.Analysis.Structures;
 
-public ref struct ManagedObjectInfo
+public struct RawManagedObjectInfo
 {
     public ulong SelfAddress;
     public ulong TypeInfoAddress;
@@ -14,9 +14,9 @@ public ref struct ManagedObjectInfo
     public int RefCount;
     public TypeFlags Flags;
 
-    public Span<byte> Data;
+    public byte[] Data;
 
-    public ManagedObjectInfo()
+    public RawManagedObjectInfo()
     {
         SelfAddress = 0;
         TypeInfoAddress = 0;
@@ -27,7 +27,7 @@ public ref struct ManagedObjectInfo
         
         Size = -1;
         RefCount = -1;
-        Data = default;
+        Data = Array.Empty<byte>();
         Flags = default;
     }
 
