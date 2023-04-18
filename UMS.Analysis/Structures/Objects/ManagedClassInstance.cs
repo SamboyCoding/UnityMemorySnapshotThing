@@ -78,8 +78,35 @@ public readonly struct ManagedClassInstance
 
         if (IsArray)
         {
-            //TODO array items
-            Fields = Array.Empty<IFieldValue>();
+            var arrayElementCount = file.ReadArrayLength(TypeDescriptionFlags, data);
+            
+            if (arrayElementCount == 0)
+            {
+                Fields = Array.Empty<IFieldValue>();
+                return;
+            }
+
+            var typeInfo = file.GetTypeInfo(info.TypeDescriptionIndex);
+
+            if (typeInfo.BaseTypeIndex < 0)
+            {
+                Console.WriteLine("WARNING: Skipping uninitialized array type");
+                Fields = Array.Empty<IFieldValue>();
+                return;
+            }
+            
+            var elementType = file.GetTypeInfo(typeInfo.BaseTypeIndex);
+            var elementFlags = file.GetTypeFlagsByIndex(elementType.TypeIndex);
+            var elementTypeSize = (elementFlags & TypeFlags.ValueType) != 0 ? file.GetTypeDescriptionSizeBytes(elementType.TypeIndex) : 8;
+            var arrayData = info.Data.AsSpan(file.VirtualMachineInformation.ArrayHeaderSize..);
+
+            Fields = new IFieldValue[arrayElementCount];
+            for (var i = 0; i < arrayElementCount; i++)
+            {
+                var elementData = arrayData[(i * elementTypeSize)..];
+                Fields[i] = ReadFieldValue(file, elementData, depth, elementFlags, elementTypeSize, elementType.TypeIndex, i);
+            }
+
             return;
         }
 
@@ -111,28 +138,46 @@ public readonly struct ManagedClassInstance
             if (isValueType)
                 fieldOffset -= file.VirtualMachineInformation.ObjectHeaderSize;
 
-            var fieldPtr = data[fieldOffset..];
-
-            //For all integer types, we just handle unsigned as signed
-            if (info.TypeDescriptionIndex == file.WellKnownTypes.String)
-                fields[index] = new StringFieldValue(file, fieldPtr);
-            else if (info.TypeDescriptionIndex == file.WellKnownTypes.Boolean || info.TypeDescriptionIndex == file.WellKnownTypes.Byte)
-                fields[index] = new IntegerFieldValue(fieldPtr[0]);
-            else if (info.TypeDescriptionIndex == file.WellKnownTypes.Int16 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt16 || info.TypeDescriptionIndex == file.WellKnownTypes.Char)
-                fields[index] = new IntegerFieldValue(BitConverter.ToInt16(fieldPtr));
-            else if (info.TypeDescriptionIndex == file.WellKnownTypes.Int32 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt32)
-                fields[index] = new IntegerFieldValue(BitConverter.ToInt32(fieldPtr));
-            else if (info.TypeDescriptionIndex == file.WellKnownTypes.Int64 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt64 || info.TypeDescriptionIndex == file.WellKnownTypes.IntPtr)
-                fields[index] = new IntegerFieldValue(BitConverter.ToInt64(fieldPtr));
-            else if (info.TypeDescriptionIndex == file.WellKnownTypes.Single)
-                fields[index] = new FloatingPointFieldValue(BitConverter.ToSingle(fieldPtr));
-            else if (info.TypeDescriptionIndex == file.WellKnownTypes.Double)
-                fields[index] = new FloatingPointFieldValue(BitConverter.ToDouble(fieldPtr));
-            else
-                fields[index] = new ComplexFieldValue(file, info, this, fieldPtr, depth + 1);
+            var fieldData = data[fieldOffset..];
+            
+            fields[index] = ReadFieldValue(file, info, fieldData, depth, false);
         }
 
         return fields;
+    }
+
+    private IFieldValue ReadFieldValue(SnapshotFile file, BasicFieldInfoCache info, Span<byte> fieldData, int depth, bool array)
+    {
+        //For all integer types, we just handle unsigned as signed
+        if (info.TypeDescriptionIndex == file.WellKnownTypes.String)
+            return new StringFieldValue(file, fieldData);
+        if (info.TypeDescriptionIndex == file.WellKnownTypes.Boolean || info.TypeDescriptionIndex == file.WellKnownTypes.Byte)
+            return new IntegerFieldValue(fieldData[0]);
+        if (info.TypeDescriptionIndex == file.WellKnownTypes.Int16 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt16 || info.TypeDescriptionIndex == file.WellKnownTypes.Char)
+            return new IntegerFieldValue(BitConverter.ToInt16(fieldData));
+        if (info.TypeDescriptionIndex == file.WellKnownTypes.Int32 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt32)
+            return new IntegerFieldValue(BitConverter.ToInt32(fieldData));
+        if (info.TypeDescriptionIndex == file.WellKnownTypes.Int64 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt64 || info.TypeDescriptionIndex == file.WellKnownTypes.IntPtr)
+            return new IntegerFieldValue(BitConverter.ToInt64(fieldData));
+        if (info.TypeDescriptionIndex == file.WellKnownTypes.Single)
+            return new FloatingPointFieldValue(BitConverter.ToSingle(fieldData));
+        if (info.TypeDescriptionIndex == file.WellKnownTypes.Double)
+            return new FloatingPointFieldValue(BitConverter.ToDouble(fieldData));
+        
+        return new ComplexFieldValue(file, info, this, fieldData, depth + 1, array);
+    }
+
+    private IFieldValue ReadFieldValue(SnapshotFile file, Span<byte> fieldData, int depth, TypeFlags fieldTypeFlags, int fieldTypeSize, int fieldTypeIndex, int arrayOffset)
+    {
+        BasicFieldInfoCache info = new()
+        {
+            Flags = fieldTypeFlags,
+            FieldIndex = arrayOffset,
+            TypeDescriptionIndex = fieldTypeIndex,
+            FieldTypeSize = fieldTypeSize,
+        };
+        
+        return ReadFieldValue(file, info, fieldData, depth, true);
     }
 
     private bool IsEnumType(SnapshotFile file) 
@@ -221,8 +266,13 @@ public readonly struct ManagedClassInstance
                 break;
             }
             case LoadedReason.ArrayElement:
-                //TODO
+            {
+                var parentName = file.GetTypeName(parent.TypeInfo.TypeIndex);
+                sb.Append("Array Element ").Append(child.FieldIndexOrArrayOffset).Append(" of ");
+                sb.Append(parentName).Append(" at 0x").Append(parent.ObjectAddress.ToString("X"));
+                sb.Append(" <- ");
                 break;
+            }
             default:
                 throw new ArgumentOutOfRangeException(nameof(child), "Invalid LoadedReason");
         }

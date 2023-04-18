@@ -140,7 +140,8 @@ public class SnapshotFile : LowLevelSnapshotFile
                 throw new($"Failed to resolve type for object at {address:X}");
         }
 
-        info.Flags = ReadSingleValueType<TypeFlags>(EntryType.TypeDescriptions_Flags, info.TypeDescriptionIndex);
+        var typeIndex = info.TypeDescriptionIndex;
+        info.Flags = GetTypeFlagsByIndex(typeIndex);
         info.Size = SizeOfObjectInBytes(info, heap);
         info.Data = heap[..info.Size].ToArray();
         info.SelfAddress = address;
@@ -150,6 +151,14 @@ public class SnapshotFile : LowLevelSnapshotFile
         return info;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public TypeFlags GetTypeFlagsByIndex(int typeIndex) 
+        => ReadSingleValueType<TypeFlags>(EntryType.TypeDescriptions_Flags, typeIndex);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetTypeDescriptionSizeBytes(int index) 
+        => ReadSingleValueType<int>(EntryType.TypeDescriptions_Size, index);
+
     public int SizeOfObjectInBytes(RawManagedObjectInfo info, Span<byte> heap)
     {
         if (info.Flags.HasFlag(TypeFlags.Array))
@@ -158,7 +167,7 @@ public class SnapshotFile : LowLevelSnapshotFile
         if (info.TypeDescriptionIndex == WellKnownTypes.String)
             return GetObjectSizeFromStringInBytes(info, heap);
 
-        return ReadSingleValueType<int>(EntryType.TypeDescriptions_Size, info.TypeDescriptionIndex);
+        return GetTypeDescriptionSizeBytes(info.TypeDescriptionIndex);
     }
 
     private int GetObjectSizeFromStringInBytes(RawManagedObjectInfo info, Span<byte> heap)
@@ -177,7 +186,7 @@ public class SnapshotFile : LowLevelSnapshotFile
 
     private int GetObjectSizeFromArrayInBytes(RawManagedObjectInfo info, Span<byte> heap)
     {
-        var arrayLength = ReadArrayLength(info, heap);
+        var arrayLength = ReadArrayLength(info.Flags, heap);
 
         if (arrayLength > heap.Length)
         {
@@ -200,7 +209,7 @@ public class SnapshotFile : LowLevelSnapshotFile
         return VirtualMachineInformation.ArrayHeaderSize + elementSize * arrayLength;
     }
 
-    private int ReadArrayLength(RawManagedObjectInfo info, Span<byte> heap)
+    public int ReadArrayLength(TypeFlags flags, Span<byte> heap)
     {
         var heapTemp = heap[VirtualMachineInformation.ArrayBoundsOffsetInHeader..]; //Seek to the bounds offset
         var bounds = ReadPointer(heapTemp);
@@ -213,7 +222,7 @@ public class SnapshotFile : LowLevelSnapshotFile
             return 0;
 
         var length = 1;
-        var rank = (int)(info.Flags & TypeFlags.ArrayRankMask) >> 16;
+        var rank = (int)(flags & TypeFlags.ArrayRankMask) >> 16;
         for (var i = 0; i < rank; i++)
         {
             length *= MemoryMarshal.Read<int>(boundsHeap);
