@@ -25,9 +25,9 @@ public class SnapshotFile : LowLevelSnapshotFile
     
     private readonly Dictionary<int, BasicTypeInfoCache> _typeInfoCacheByTypeIndex = new();
 
-    private readonly Dictionary<ulong, RawManagedObjectInfo> _managedObjectInfoCache = new();
-    
-    private readonly Dictionary<ulong, ManagedClassInstance> _managedClassInstanceCache = new();
+    private readonly Dictionary<ulong, RawManagedObjectInfo> _managedObjectInfoCache = new(1024*1024 * 4);
+
+    private readonly Dictionary<ulong, ManagedClassInstance> _managedClassInstanceCache = new(1024 * 1024 * 4);
     
     private readonly Dictionary<int, string> _typeNamesByTypeIndex = new();
     

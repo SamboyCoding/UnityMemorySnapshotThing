@@ -91,9 +91,9 @@ public readonly struct ManagedClassInstance
         if (CheckIfRecursiveReference())
             return Array.Empty<IFieldValue>();
 
-        if (depth > 250)
+        if (depth > 350)
         {
-            Console.WriteLine($"Stopped reading fields due to too-deeply nested object at depth {depth}");
+            Console.WriteLine($"Stopped reading fields due to too-deeply nested object at depth {depth} (this object is of type {file.GetTypeName(TypeInfo.TypeIndex)}, parent is of type {file.GetTypeName(TypedParent.TypeInfo.TypeIndex)})");
             return Array.Empty<IFieldValue>();
         }
 
