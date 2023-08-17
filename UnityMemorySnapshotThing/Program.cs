@@ -87,36 +87,21 @@ public static class Program
         var leakedTypes = new Dictionary<string, int>();
         foreach (var managedClassInstance in unityEngineObjects)
         {
-            var fields = file.GetInstanceFieldInfoForTypeIndex(managedClassInstance.TypeInfo.TypeIndex);
-            for (var fieldNumber = 0; fieldNumber < fields.Length; fieldNumber++)
+            if (managedClassInstance.IsLeakedManagedShell(file))
             {
-                var basicFieldInfoCache = fields[fieldNumber];
-                var name = file.GetFieldName(basicFieldInfoCache.FieldIndex);
+                var typeName = file.GetTypeName(managedClassInstance.TypeInfo.TypeIndex);
 
-                if (name == "m_CachedPtr")
-                {
-                    var value = managedClassInstance.Fields[fieldNumber];
-                    
-                    if(value is not IntegerFieldValue integerFieldValue)
-                        throw new Exception("Expected integer field value");
-                    
-                    if (integerFieldValue.Value == 0)
-                    {
-                        var typeName = file.GetTypeName(managedClassInstance.TypeInfo.TypeIndex);
+                str = $"Found leaked managed object of type: {typeName} at memory address 0x{managedClassInstance.ObjectAddress:X}";
+                Console.WriteLine(str);
+                ret.AppendLine(str);
 
-                        str = $"Found leaked managed object of type: {typeName} at memory address 0x{managedClassInstance.ObjectAddress:X}";
-                        Console.WriteLine(str);
-                        ret.AppendLine(str);
-
-                        str = $"    Retention Path: {managedClassInstance.GetFirstObservedRetentionPath(file)}";
-                        Console.WriteLine(str);
-                        ret.AppendLine(str);
+                str = $"    Retention Path: {managedClassInstance.GetFirstObservedRetentionPath(file)}";
+                Console.WriteLine(str);
+                ret.AppendLine(str);
                         
-                        leakedTypes[typeName] = leakedTypes.GetValueOrDefault(typeName) + 1;
+                leakedTypes[typeName] = leakedTypes.GetValueOrDefault(typeName) + 1;
                         
-                        numLeaked++;
-                    }
-                }
+                numLeaked++;
             }
         }
 
@@ -131,4 +116,6 @@ public static class Program
         
         File.WriteAllText("leaked_objects.txt", ret.ToString());
     }
+
+   
 }

@@ -262,6 +262,17 @@ public readonly struct ManagedClassInstance
                 var field = fieldList.First(f => f.FieldIndex == child.FieldIndexOrArrayOffset);
                 sb.Append("Field ").Append(file.GetFieldName(field.FieldIndex)).Append(" of ");
                 sb.Append(parentName).Append(" at 0x").Append(parent.ObjectAddress.ToString("X"));
+
+                if (parent.InheritsFromUnityEngineObject(file))
+                {
+                    var parentInst = file.GetOrCreateManagedClassInstance(parent.ObjectAddress);
+                    
+                    if (parentInst.HasValue && parentInst.Value.IsLeakedManagedShell(file))
+                        sb.Append(" (leaked managed shell)");
+                    else
+                        sb.Append(" (unity object, non-leaked)");
+                }
+
                 sb.Append(" <- ");
                 break;
             }
@@ -276,5 +287,35 @@ public readonly struct ManagedClassInstance
             default:
                 throw new ArgumentOutOfRangeException(nameof(child), "Invalid LoadedReason");
         }
+    }
+    
+    public bool IsLeakedManagedShell(SnapshotFile file)
+    {
+        if (!InheritsFromUnityEngineObject(file))
+            //Can't be a leaked managed shell if it's not a managed shell at all
+            return false;
+
+        // if (Fields == null)
+        //     return false; //Can't check
+
+        var fields = file.GetInstanceFieldInfoForTypeIndex(TypeInfo.TypeIndex);
+        for (var fieldNumber = 0; fieldNumber < fields.Length; fieldNumber++)
+        {
+            var basicFieldInfoCache = fields[fieldNumber];
+            var name = file.GetFieldName(basicFieldInfoCache.FieldIndex);
+
+            if (name == "m_CachedPtr")
+            {
+                var value = Fields[fieldNumber];
+
+                if (value is not IntegerFieldValue integerFieldValue)
+                    throw new Exception("Expected integer field value");
+
+                return integerFieldValue.Value == 0;
+            }
+        }
+
+        //Couldn't find the m_CachedPtr field. Weird, but return false.
+        return false;
     }
 }
