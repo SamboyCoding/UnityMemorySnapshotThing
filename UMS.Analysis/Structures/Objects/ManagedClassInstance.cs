@@ -104,7 +104,7 @@ public readonly struct ManagedClassInstance
             for (var i = 0; i < arrayElementCount; i++)
             {
                 var elementData = arrayData[(i * elementTypeSize)..];
-                Fields[i] = ReadFieldValue(file, elementData, depth, elementFlags, elementTypeSize, elementType.TypeIndex, i);
+                Fields[i] = ReadArrayEntry(file, elementData, depth, elementFlags, elementTypeSize, elementType.TypeIndex, i);
             }
 
             return;
@@ -167,7 +167,7 @@ public readonly struct ManagedClassInstance
         return new ComplexFieldValue(file, info, this, fieldData, depth + 1, array);
     }
 
-    private IFieldValue ReadFieldValue(SnapshotFile file, Span<byte> fieldData, int depth, TypeFlags fieldTypeFlags, int fieldTypeSize, int fieldTypeIndex, int arrayOffset)
+    private IFieldValue ReadArrayEntry(SnapshotFile file, Span<byte> fieldData, int depth, TypeFlags fieldTypeFlags, int fieldTypeSize, int fieldTypeIndex, int arrayOffset)
     {
         BasicFieldInfoCache info = new()
         {
