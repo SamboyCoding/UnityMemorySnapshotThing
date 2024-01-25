@@ -86,5 +86,23 @@ public enum EntryType : ushort
     NativeAllocatorInfo_PeakUsedSize,
     NativeAllocatorInfo_AllocationCount,
     NativeAllocatorInfo_Flags, //80
+    // NativeObjectMetaDataVersion = 15
+    // Adds meta data
+    ObjectMetaData_MetaDataBufferIndicies,
+    ObjectMetaData_MetaDataBuffer,
+    // SystemMemoryRegionsVersion = 16
+    // Adds system memory regions
+    SystemMemoryRegions_Address,
+    SystemMemoryRegions_Size,
+    SystemMemoryRegions_Resident,
+    SystemMemoryRegions_Type,
+    SystemMemoryRegions_Name,
+    // SystemMemoryResidentPagesVersion = 17
+    // Adds system memory resident pages
+    SystemMemoryResidentPages_Address,
+    SystemMemoryResidentPages_FirstPageIndex,
+    SystemMemoryResidentPages_LastPageIndex,
+    SystemMemoryResidentPages_PagesState,
+    SystemMemoryResidentPages_PageSize,
     Count, //used to keep track of entry count, only add c++ matching entries above this one
 }

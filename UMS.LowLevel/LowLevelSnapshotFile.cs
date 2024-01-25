@@ -86,8 +86,11 @@ public class LowLevelSnapshotFile : IDisposable
         ReadMetadataForAllChapters(entryTypeToChapterOffset);
         
         VirtualMachineInformation = ReadChapterAsStruct<VirtualMachineInformation>(EntryType.Metadata_VirtualMachineInformation);
+
+        var areHeapAddressesEncoded = SnapshotFormatVersion >= FormatVersion.MemLabelSizeAndHeapIdVersion;
+        
         ManagedHeapSectionStartAddresses = ReadValueTypeChapter<ulong>(EntryType.ManagedHeapSections_StartAddress, 0, -1).ToArray()
-            .Select((a, i) => new ManagedHeapSection(a, ReadChapterBody(EntryType.ManagedHeapSections_Bytes, i, 1)))
+            .Select((a, i) => new ManagedHeapSection(a,  areHeapAddressesEncoded, ReadChapterBody(EntryType.ManagedHeapSections_Bytes, i, 1)))
             .ToArray();
         
         Array.Sort(ManagedHeapSectionStartAddresses);

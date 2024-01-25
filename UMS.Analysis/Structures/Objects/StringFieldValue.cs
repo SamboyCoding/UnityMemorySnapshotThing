@@ -38,6 +38,14 @@ public struct StringFieldValue : IFieldValue
         data = managedObjectInfo.Data;
 
         var offset = file.VirtualMachineInformation.ObjectHeaderSize + 4;
+        
+        if(offset > data.Length)
+        {
+            FailedToParse = true;
+            FailedParseFromPtr = ptr;
+            return;
+        }
+        
         var stringPtr = data[offset..];
 
         var end = stringPtr.LastIndexOf(new byte[] { 0, 0 });
