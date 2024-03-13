@@ -134,15 +134,21 @@ public class SnapshotFile : LowLevelSnapshotFile
                 return new();
 
             info.TypeInfoAddress = ReadPointer(typeInfoSpan);
-            TypeIndicesByPointer.TryGetValue(info.TypeInfoAddress, out info.TypeDescriptionIndex);
-
-            if (!info.IsKnownType)
-                throw new($"Failed to resolve type for object at {address:X}");
+            if (!TypeIndicesByPointer.TryGetValue(info.TypeInfoAddress, out info.TypeDescriptionIndex) || !info.IsKnownType)
+            {
+                Console.WriteLine($"WARNING: Failed to resolve type for object at {address:X}");
+                
+                //Cache the failure - let's not waste time.
+                ret = _managedObjectInfoCache[address] = new();
+                return ret;
+            }
         }
 
         var typeIndex = info.TypeDescriptionIndex;
         info.Flags = GetTypeFlagsByIndex(typeIndex);
         info.Size = SizeOfObjectInBytes(info, heap);
+        if (info.Size == 0)
+            throw new("Size 0?");
         info.Data = heap[..info.Size].ToArray();
         info.SelfAddress = address;
         
@@ -190,8 +196,8 @@ public class SnapshotFile : LowLevelSnapshotFile
 
         if (arrayLength > heap.Length)
         {
-            Console.WriteLine($"Warning: Skipping unreasonable array length {arrayLength}");
-            return VirtualMachineInformation.ArrayHeaderSize; //Sanity bailout
+            Console.WriteLine($"Warning: Reducing array length {arrayLength} to {heap.Length} because the heap doesn't contain all the data.");
+            return heap.Length; //Sanity bailout
         }
 
         //Need to check if the array element type is a value type

@@ -100,6 +100,8 @@ public readonly struct ManagedClassInstance
             var elementTypeSize = (elementFlags & TypeFlags.ValueType) != 0 ? file.GetTypeDescriptionSizeBytes(elementType.TypeIndex) : 8;
             var arrayData = info.Data.AsSpan(file.VirtualMachineInformation.ArrayHeaderSize..);
 
+            arrayElementCount = Math.Min(arrayElementCount, arrayData.Length / elementTypeSize); //Just in case the array length is wrong
+
             Fields = new IFieldValue[arrayElementCount];
             for (var i = 0; i < arrayElementCount; i++)
             {
@@ -304,7 +306,7 @@ public readonly struct ManagedClassInstance
             var basicFieldInfoCache = fields[fieldNumber];
             var name = file.GetFieldName(basicFieldInfoCache.FieldIndex);
 
-            if (name == "m_CachedPtr")
+            if (name == "m_CachedPtr" && Fields.Length > fieldNumber)
             {
                 var value = Fields[fieldNumber];
 
