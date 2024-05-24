@@ -32,8 +32,11 @@ public class SnapshotFile : LowLevelSnapshotFile
     private readonly Dictionary<int, string> _typeNamesByTypeIndex = new();
     
     private readonly Dictionary<int, string> _fieldNamesByFieldIndex = new();
+    
+    //Stores any additional ManagedClassInstances that we create from reading fields that are value types, because those don't have a pointer to them so we can't cache them
+    private readonly List<ManagedClassInstance> _additionalManagedValueTypeInstances = new(1024 * 1024 * 4); 
 
-    public IEnumerable<ManagedClassInstance> AllManagedClassInstances => _managedClassInstanceCache.Values;
+    public IEnumerable<ManagedClassInstance> AllManagedClassInstances => _managedClassInstanceCache.Values.Concat(_additionalManagedValueTypeInstances);
 
     public SnapshotFile(string path) : base(path)
     {
@@ -80,11 +83,14 @@ public class SnapshotFile : LowLevelSnapshotFile
             foreach (var field in staticFields)
             {
                 StaticFieldsToOwningTypes[field.FieldIndex] = typeIndex;
-                if(field.IsValueType)
-                    continue; //TODO
-                
-                if(field.IsArray)
+                if (field.IsValueType)
+                {
+                    //Simply read this, if it has any managed objects in it, they'll be added to the cache
+                    IFieldValue.Read(this, field, typeFieldBytes[field.FieldOffset..], 0, LoadedReason.StaticField, null);
                     continue;
+                }
+                
+                //If array, then we have a pointer to it and can use the exact same logic as for static non-array fields
 
                 var fieldOffset = field.FieldOffset;
                 
@@ -390,5 +396,10 @@ public class SnapshotFile : LowLevelSnapshotFile
 
         _fieldNamesByFieldIndex[fieldIndex] = ret = ReadSingleStringFromChapter(EntryType.FieldDescriptions_Name, fieldIndex);
         return ret;
+    }
+    
+    internal void RegisterAdditionalManagedValueTypeInstance(ManagedClassInstance instance)
+    {
+        _additionalManagedValueTypeInstances.Add(instance);
     }
 }

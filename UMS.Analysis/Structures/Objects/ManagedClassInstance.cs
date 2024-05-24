@@ -24,7 +24,7 @@ public readonly struct ManagedClassInstance
     
     public bool IsValueType => (TypeDescriptionFlags & TypeFlags.ValueType) == TypeFlags.ValueType;
 
-    public ManagedClassInstance(SnapshotFile file, int typeDescriptionIndex, TypeFlags flags, int size, Span<byte> data, ManagedClassInstance parent, int depth, LoadedReason loadedReason, int fieldIndexOrArrayOffset = int.MinValue)
+    public ManagedClassInstance(SnapshotFile file, int typeDescriptionIndex, TypeFlags flags, int size, Span<byte> data, ManagedClassInstance? parent, int depth, LoadedReason loadedReason, int fieldIndexOrArrayOffset = int.MinValue)
     {
         TypeDescriptionFlags = flags;
         
@@ -106,7 +106,8 @@ public readonly struct ManagedClassInstance
             for (var i = 0; i < arrayElementCount; i++)
             {
                 var elementData = arrayData[(i * elementTypeSize)..];
-                Fields[i] = ReadArrayEntry(file, elementData, depth, elementFlags, elementTypeSize, elementType.TypeIndex, i);
+                if(elementData.Length > 0)
+                    Fields[i] = ReadArrayEntry(file, elementData, depth, elementFlags, elementTypeSize, elementType.TypeIndex, i);
             }
 
             return;
@@ -142,32 +143,14 @@ public readonly struct ManagedClassInstance
 
             var fieldData = data[fieldOffset..];
             
-            fields[index] = ReadFieldValue(file, info, fieldData, depth, false);
+            fields[index] = ReadFieldValue(file, info, fieldData, depth, LoadedReason.InstanceField);
         }
 
         return fields;
     }
 
-    private IFieldValue ReadFieldValue(SnapshotFile file, BasicFieldInfoCache info, Span<byte> fieldData, int depth, bool array)
-    {
-        //For all integer types, we just handle unsigned as signed
-        if (info.TypeDescriptionIndex == file.WellKnownTypes.String)
-            return new StringFieldValue(file, fieldData);
-        if (info.TypeDescriptionIndex == file.WellKnownTypes.Boolean || info.TypeDescriptionIndex == file.WellKnownTypes.Byte)
-            return new IntegerFieldValue(fieldData[0]);
-        if (info.TypeDescriptionIndex == file.WellKnownTypes.Int16 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt16 || info.TypeDescriptionIndex == file.WellKnownTypes.Char)
-            return new IntegerFieldValue(BitConverter.ToInt16(fieldData));
-        if (info.TypeDescriptionIndex == file.WellKnownTypes.Int32 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt32)
-            return new IntegerFieldValue(BitConverter.ToInt32(fieldData));
-        if (info.TypeDescriptionIndex == file.WellKnownTypes.Int64 || info.TypeDescriptionIndex == file.WellKnownTypes.UInt64 || info.TypeDescriptionIndex == file.WellKnownTypes.IntPtr)
-            return new IntegerFieldValue(BitConverter.ToInt64(fieldData));
-        if (info.TypeDescriptionIndex == file.WellKnownTypes.Single)
-            return new FloatingPointFieldValue(BitConverter.ToSingle(fieldData));
-        if (info.TypeDescriptionIndex == file.WellKnownTypes.Double)
-            return new FloatingPointFieldValue(BitConverter.ToDouble(fieldData));
-        
-        return new ComplexFieldValue(file, info, this, fieldData, depth + 1, array);
-    }
+    private IFieldValue ReadFieldValue(SnapshotFile file, BasicFieldInfoCache info, Span<byte> fieldData, int depth, LoadedReason loadedReason) 
+        => IFieldValue.Read(file, info, fieldData, depth, loadedReason, this);
 
     private IFieldValue ReadArrayEntry(SnapshotFile file, Span<byte> fieldData, int depth, TypeFlags fieldTypeFlags, int fieldTypeSize, int fieldTypeIndex, int arrayOffset)
     {
@@ -179,7 +162,7 @@ public readonly struct ManagedClassInstance
             FieldTypeSize = fieldTypeSize,
         };
         
-        return ReadFieldValue(file, info, fieldData, depth, true);
+        return ReadFieldValue(file, info, fieldData, depth, LoadedReason.ArrayElement);
     }
 
     private bool IsEnumType(SnapshotFile file) 
