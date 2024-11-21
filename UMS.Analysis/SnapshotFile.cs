@@ -83,19 +83,22 @@ public class SnapshotFile : LowLevelSnapshotFile
             foreach (var field in staticFields)
             {
                 StaticFieldsToOwningTypes[field.FieldIndex] = typeIndex;
+
+                var fieldOffset = field.FieldOffset;
+                if(fieldOffset < 0)
+                    continue; //Thread-static fields for example
+                
                 if (field.IsValueType)
                 {
-                    //Simply read this, if it has any managed objects in it, they'll be added to the cache
-                    IFieldValue.Read(this, field, typeFieldBytes[field.FieldOffset..], 0, LoadedReason.StaticField, null);
+                    if (fieldOffset < typeFieldBytes.Length - 1)
+                    {
+                        //Simply read this, if it has any managed objects in it, they'll be added to the cache
+                        IFieldValue.Read(this, field, typeFieldBytes[fieldOffset..], 0, LoadedReason.StaticField, null);
+                    }
                     continue;
                 }
                 
                 //If array, then we have a pointer to it and can use the exact same logic as for static non-array fields
-
-                var fieldOffset = field.FieldOffset;
-                
-                if(fieldOffset < 0)
-                    continue; //Generics, mainly
                 
                 var fieldPointer = MemoryMarshal.Read<ulong>(typeFieldBytes[fieldOffset..]);
                 if (fieldPointer == 0)
