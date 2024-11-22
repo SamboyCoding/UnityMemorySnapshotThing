@@ -100,7 +100,11 @@ public readonly struct ManagedClassInstance
             var elementTypeSize = (elementFlags & TypeFlags.ValueType) != 0 ? file.GetTypeDescriptionSizeBytes(elementType.TypeIndex) : 8;
             var arrayData = info.Data.AsSpan(file.VirtualMachineInformation.ArrayHeaderSize..);
 
+            var oldArrayElementCount = arrayElementCount;
             arrayElementCount = Math.Min(arrayElementCount, arrayData.Length / elementTypeSize); //Just in case the array length is wrong
+            
+            if (oldArrayElementCount != arrayElementCount)
+                Console.WriteLine($"WARNING: Array length mismatch for {file.GetTypeName(info.TypeDescriptionIndex)} at 0x{info.SelfAddress:X} (expected {oldArrayElementCount}, got {arrayElementCount})");
 
             Fields = new IFieldValue[arrayElementCount];
             for (var i = 0; i < arrayElementCount; i++)
@@ -121,7 +125,7 @@ public readonly struct ManagedClassInstance
         if (CheckIfRecursiveReference())
             return Array.Empty<IFieldValue>();
 
-        if (depth > 350)
+        if (depth > 380)
         {
             Console.WriteLine($"Stopped reading fields due to too-deeply nested object at depth {depth} (this object is of type {file.GetTypeName(TypeInfo.TypeIndex)}, parent is of type {file.GetTypeName(TypedParent.TypeInfo.TypeIndex)})");
             return Array.Empty<IFieldValue>();

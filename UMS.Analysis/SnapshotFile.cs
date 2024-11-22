@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using UMS.Analysis.Structures;
 using UMS.Analysis.Structures.Objects;
@@ -116,7 +117,7 @@ public class SnapshotFile : LowLevelSnapshotFile
         if (_managedClassInstanceCache.TryGetValue(address, out var ret))
             return ret;
         
-        var info = ParseManagedObjectInfo(address);
+        using var info = ParseManagedObjectInfo(address);
         if (!info.IsKnownType)
             return null;
 
@@ -145,7 +146,7 @@ public class SnapshotFile : LowLevelSnapshotFile
             info.TypeInfoAddress = ReadPointer(typeInfoSpan);
             if (!TypeIndicesByPointer.TryGetValue(info.TypeInfoAddress, out info.TypeDescriptionIndex) || !info.IsKnownType)
             {
-                Console.WriteLine($"WARNING: Failed to resolve type for object at {address:X}");
+                Console.WriteLine($"WARNING: Failed to resolve type for object at {address:X} - type info address {info.TypeInfoAddress:X} resulted in type index {info.TypeDescriptionIndex}");
                 
                 //Cache the failure - let's not waste time.
                 ret = _managedObjectInfoCache[address] = new();
@@ -158,7 +159,34 @@ public class SnapshotFile : LowLevelSnapshotFile
         info.Size = SizeOfObjectInBytes(info, heap);
         if (info.Size == 0)
             throw new("Size 0?");
-        info.Data = heap[..info.Size].ToArray();
+
+        if (info.Size > heap.Length)
+        {
+            //Non-contiguous heap, let's copy piecemeal
+            var destData = ArrayPool<byte>.Shared.Rent(info.Size);
+            var pos = 0;
+            var readingFromMemAddress = address;
+            
+            do
+            {
+                var toCopy = Math.Min(heap.Length, info.Size - pos);
+                heap[..toCopy].CopyTo(destData.AsSpan(pos..));
+                pos += toCopy;
+                readingFromMemAddress += (ulong)toCopy;
+                
+                if (!TryGetSpanForHeapAddress(readingFromMemAddress, out heap))
+                    break;
+            } while (pos < info.Size);
+            
+            info.Data = destData;
+        }
+        else
+        {
+            info.Data = ArrayPool<byte>.Shared.Rent(info.Size);
+            var heapSpan = heap[..info.Size];
+            heapSpan.CopyTo(info.Data);
+        }
+
         info.SelfAddress = address;
         
         _managedObjectInfoCache.Add(address, info);

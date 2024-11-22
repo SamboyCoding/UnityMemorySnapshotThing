@@ -1,8 +1,9 @@
-﻿using UMS.LowLevel.Structures;
+﻿using System.Buffers;
+using UMS.LowLevel.Structures;
 
 namespace UMS.Analysis.Structures;
 
-public struct RawManagedObjectInfo
+public struct RawManagedObjectInfo : IDisposable
 {
     public ulong SelfAddress;
     public ulong TypeInfoAddress;
@@ -33,5 +34,11 @@ public struct RawManagedObjectInfo
 
 
     public bool IsKnownType => TypeDescriptionIndex >= 0;
-    
+
+    public void Dispose()
+    {
+        Array.Clear(Data);
+        ArrayPool<byte>.Shared.Return(Data);
+        Data = [];
+    }
 }

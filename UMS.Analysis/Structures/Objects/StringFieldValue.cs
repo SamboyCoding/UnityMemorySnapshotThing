@@ -27,7 +27,7 @@ public struct StringFieldValue : IFieldValue
             return;
         }
 
-        var managedObjectInfo = file.ParseManagedObjectInfo(ptr);
+        using var managedObjectInfo = file.ParseManagedObjectInfo(ptr);
         if (!managedObjectInfo.IsKnownType)
         {
             FailedToParse = true;
