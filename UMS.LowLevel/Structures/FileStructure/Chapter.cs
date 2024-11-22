@@ -14,12 +14,12 @@ public class Chapter
 
     public uint Count => Header.Count;
 
-    public ulong GetOffsetIntoBlock(uint startOffset) =>
+    public long GetOffsetIntoBlock(long startOffset) =>
         Header.Format switch
         {
-            EntryFormat.SingleElement => Header.HeaderMeta,
+            EntryFormat.SingleElement => (long)Header.HeaderMeta,
             EntryFormat.ConstantSizeElementArray => Header.EntriesMeta * startOffset,
-            EntryFormat.DynamicSizeElementArray => startOffset == 0 ? 0u : (ulong)AdditionalEntryStorage![startOffset - 1],
+            EntryFormat.DynamicSizeElementArray => (long)(startOffset == 0 ? 0u : (ulong)AdditionalEntryStorage![startOffset - 1]),
             _ => throw new("Invalid format")
         };
 

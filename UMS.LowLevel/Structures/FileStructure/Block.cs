@@ -13,7 +13,7 @@ public struct Block
     
     public long StartOffset => Offsets[0];
 
-    public Block(BlockHeader header, MemoryMappedFileSpanHelper<byte> file, int start)
+    public Block(BlockHeader header, MemoryMappedFileSpanHelper<byte> file, long start)
     {
         _file = file;
         Header = header;
@@ -38,7 +38,7 @@ public struct Block
         var ranges = new List<MergedRange>();
         var currOffset = RangeFromOffset(0, Offsets[0]);
         var index = 1;
-        var blockOffset = (int) Header.ChunkSize;
+        var blockOffset = (long) Header.ChunkSize;
 
         while (index < Offsets.Length)
         {
@@ -63,38 +63,38 @@ public struct Block
         return ranges;
     }
 
-    private MergedRange RangeFromOffset(int blockOffset, long fileOffset)
+    private MergedRange RangeFromOffset(long blockOffset, long fileOffset)
     {
-        var start = (int)fileOffset;
+        var start = fileOffset;
         
         return new(blockOffset, start, (int)Header.ChunkSize);
     }
 
-    public bool TryReadAsSpan(uint index, int length, out Span<byte> result)
+    public bool TryReadAsSpan(long index, int length, out Span<byte> result)
     {
         result = default;
 
-        var relevantBlock = BinarySearchForRelevantChunk(MergedRanges, (int)index);
+        var relevantBlock = BinarySearchForRelevantChunk(MergedRanges, index);
         if (relevantBlock == -1)
             //No block found containing index
             return false;
 
         var range = MergedRanges[relevantBlock];
 
-        var offset = (int)(index - range.BlockStart);
+        var offset = index - range.BlockStart;
         var remaining = range.Length - offset;
         if (remaining < length)
             return false;
 
-        result = _file.Span.Slice(range.FileStart + offset, length);
+        result = _file.AsSpan<byte>(range.FileStart + offset, length);
         return true;
     }
 
-    public byte[] Read(uint index, int length)
+    public byte[] Read(long index, long length)
     {
-        var startChunk = (uint) (index / Header.ChunkSize);
-        var offsetIntoFirstChunk = (uint) (index % Header.ChunkSize);
-        var bytesLeftInChunk = (uint) Header.ChunkSize - offsetIntoFirstChunk;
+        var startChunk = index / (long) Header.ChunkSize;
+        var offsetIntoFirstChunk = index % (long) Header.ChunkSize;
+        var bytesLeftInChunk = (long) Header.ChunkSize - offsetIntoFirstChunk;
 
         if (length > bytesLeftInChunk)
         {
@@ -103,12 +103,12 @@ public struct Block
         }
         
         var chunk = Offsets[startChunk];
-        var offset = (int) (chunk + offsetIntoFirstChunk);
+        var offset = chunk + offsetIntoFirstChunk;
         
-        return _file.Span[offset..(offset + length)].ToArray();
+        return _file.AsSpan<byte>(offset, (int)length).ToArray();
     }
 
-    private byte[] ReadMultipleChunks(uint startChunk, uint offsetIntoFirstChunk, int length)
+    private byte[] ReadMultipleChunks(long startChunk, long offsetIntoFirstChunk, long length)
     {
         var ret = new byte[length];
         var bytesLeft = length;
@@ -120,10 +120,10 @@ public struct Block
         while (bytesLeft > 0)
         {
             var chunkStart = Offsets[currChunk];
-            var bytesToRead = Math.Min((int) Header.ChunkSize - (int) chunkOffset, bytesLeft);
-            var chunk = _file.Span[(int) (chunkStart + chunkOffset)..(int) (chunkStart + chunkOffset + bytesToRead)];
+            var bytesToRead = Math.Min((long) Header.ChunkSize - chunkOffset, bytesLeft);
+            var chunk = _file.AsSpan<byte>(chunkStart + chunkOffset, (int)bytesToRead);
             chunk.CopyTo(ret.AsSpan(offset));
-            offset += bytesToRead;
+            offset += (int) bytesToRead;
             bytesLeft -= bytesToRead;
             chunkOffset = 0;
             currChunk++;
@@ -132,7 +132,7 @@ public struct Block
         return ret;
     }
     
-    private static int BinarySearchForRelevantChunk(MergedRange[] ranges, int offset)
+    private static int BinarySearchForRelevantChunk(MergedRange[] ranges, long offset)
     {
         var first = 0;
         var last = ranges.Length - 1;
@@ -154,13 +154,13 @@ public struct Block
 
     public struct MergedRange
     {
-        public int BlockStart;
-        public int FileStart;
+        public long BlockStart;
+        public long FileStart;
         public int Length;
-        public int BlockEnd;
-        public int FileEnd;
+        public long BlockEnd;
+        public long FileEnd;
         
-        public MergedRange(int blockStart, int fileStart, int length)
+        public MergedRange(long blockStart, long fileStart, int length)
         {
             BlockStart = blockStart;
             FileStart = fileStart;

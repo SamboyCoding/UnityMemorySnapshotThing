@@ -46,8 +46,8 @@ public class LowLevelSnapshotFile : IDisposable
         if(magic != MagicNumbers.HeaderMagic || endMagic != MagicNumbers.FooterMagic)
             throw new($"Magic number mismatch. Expected {MagicNumbers.HeaderMagic} and {MagicNumbers.FooterMagic} but got {magic} and {endMagic}");
 
-        var directoryMetadataOffset = (int) _file.As<ulong>(^12..); //8 bytes before end magic
-        var directoryMetadata = _file.As<DirectoryMetadata>(directoryMetadataOffset..);
+        var directoryMetadataOffset = _file.As<long>(^12..); //8 bytes before end magic
+        var directoryMetadata = _file.As<DirectoryMetadata>(directoryMetadataOffset, sizeof(DirectoryMetadata));
 
         if(directoryMetadata.Magic != MagicNumbers.DirectoryMagic)
             throw new($"Directory magic number mismatch. Expected {MagicNumbers.DirectoryMagic} but got {directoryMetadata.Magic}");
@@ -55,7 +55,7 @@ public class LowLevelSnapshotFile : IDisposable
         if (directoryMetadata.Version != MagicNumbers.SupportedDirectoryVersion)
             throw new($"Directory version mismatch. Expected {MagicNumbers.SupportedDirectoryVersion} but got {directoryMetadata.Version}");
 
-        var blockSection = _file.As<BlockSection>(directoryMetadata.BlocksOffset);
+        var blockSection = _file.As<BlockSection>((long) directoryMetadata.BlocksOffset);
 
         if (blockSection.Version != MagicNumbers.SupportedBlockSectionVersion)
             throw new($"Block section version mismatch. Expected {MagicNumbers.SupportedBlockSectionVersion} but got {blockSection.Version}");
@@ -73,11 +73,11 @@ public class LowLevelSnapshotFile : IDisposable
 
         var startOfEntryOffsets = directoryMetadataOffset + sizeof(DirectoryMetadata); //Start of entry offsets is right after directory metadata
         var endOfEntryOffsets = startOfEntryOffsets + entryOffsetCount * sizeof(long);
-        var entryTypeToChapterOffset = _file.AsSpan<long>(startOfEntryOffsets..endOfEntryOffsets);
+        var entryTypeToChapterOffset = _file.AsSpan<long>(startOfEntryOffsets, (int)(endOfEntryOffsets - startOfEntryOffsets));
         
-        var startOfDataBlockOffsets = (int) directoryMetadata.BlocksOffset + sizeof(BlockSection);
+        var startOfDataBlockOffsets = (long) directoryMetadata.BlocksOffset + sizeof(BlockSection);
         var endOfDataBlockOffsets = startOfDataBlockOffsets + blockSection.Count * sizeof(long);
-        var dataBlockOffsets = _file.AsSpan<long>(startOfDataBlockOffsets..endOfDataBlockOffsets);
+        var dataBlockOffsets = _file.AsSpan<long>(startOfDataBlockOffsets, (int) (endOfDataBlockOffsets - startOfDataBlockOffsets));
 
         _blocks = new Block[dataBlockOffsets.Length];
         ReadAllBlocks(dataBlockOffsets);
@@ -101,7 +101,7 @@ public class LowLevelSnapshotFile : IDisposable
         for (var i = 0; i < dataBlockOffsets.Length; i++)
         {
             var header = _file.As<BlockHeader>(dataBlockOffsets[i]);
-            _blocks[i] = new(header, _file, (int)(dataBlockOffsets[i] + sizeof(BlockHeader)));
+            _blocks[i] = new(header, _file, dataBlockOffsets[i] + sizeof(BlockHeader));
         }
     }
 
@@ -112,7 +112,7 @@ public class LowLevelSnapshotFile : IDisposable
             if (entryTypeToChapterOffset[i] == 0)
                 continue;
 
-            _chaptersByEntryType[(EntryType)i] = ReadChapterMetadata((int)entryTypeToChapterOffset[i]);
+            _chaptersByEntryType[(EntryType)i] = ReadChapterMetadata(entryTypeToChapterOffset[i]);
 
             if (_chaptersByEntryType[(EntryType)i].AdditionalEntryStorage != null)
             {
@@ -121,7 +121,7 @@ public class LowLevelSnapshotFile : IDisposable
         }
     }
 
-    private unsafe Chapter ReadChapterMetadata(int chapterOffset)
+    private unsafe Chapter ReadChapterMetadata(long chapterOffset)
     {
         var header = _file.As<ChapterHeader>(chapterOffset);
         var chapter = new Chapter(header)
@@ -132,9 +132,9 @@ public class LowLevelSnapshotFile : IDisposable
         if (header.Format == EntryFormat.DynamicSizeElementArray)
         {
             var dataStart = chapterOffset + sizeof(ChapterHeader);
-            var dataEnd = dataStart + (int)header.Count * sizeof(long);
+            var dataEnd = dataStart + header.Count * sizeof(long);
 
-            chapter.AdditionalEntryStorage = _file.AsSpan<long>(dataStart..dataEnd).ToArray();
+            chapter.AdditionalEntryStorage = _file.AsSpan<long>(dataStart, (int)(dataEnd - dataStart)).ToArray();
         }
 
         return chapter;
@@ -172,8 +172,8 @@ public class LowLevelSnapshotFile : IDisposable
         var chapter = _chaptersByEntryType[entryType];
         var block = chapter.Block;
 
-        var start = (uint) chapter.GetOffsetIntoBlock((uint)startOffset);
-        var size = (int) chapter.ComputeByteSizeForEntryRange(startOffset, count, false);
+        var start = chapter.GetOffsetIntoBlock(startOffset);
+        var size = chapter.ComputeByteSizeForEntryRange(startOffset, count, false);
 
         return block.Read(start, size);
     }

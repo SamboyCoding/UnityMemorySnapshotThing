@@ -17,4 +17,4 @@ But there are also a couple reasons you might need to use the in-editor one over
 - This tool doesn't show non-leaked shells, so it's useless for e.g. showing usage by category.
 - This tool doesn't calculate how *much* memory is leaked, just how many objects.
 - This tool doesn't allow comparing two snapshots.
-- This tool doesn't support snapshots greater than 2GiB in size.
+- This tool may not have full support for snapshots greater than 2GiB in size. It works in theory but may not catch everything.

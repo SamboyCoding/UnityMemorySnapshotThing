@@ -10,6 +10,6 @@ public struct BlockHeader
 
     public uint OffsetCount => (uint)(TotalBytes / ChunkSize) + (TotalBytes % ChunkSize == 0 ? 0u : 1u);
     
-    public Span<long> GetOffsets(MemoryMappedFileSpanHelper<byte> file, int start) 
-        => file.AsSpan<long>(start..(start + (int) OffsetCount * sizeof(long)));
+    public Span<long> GetOffsets(MemoryMappedFileSpanHelper<byte> file, long start) 
+        => file.AsSpan<long>(start, (int) OffsetCount * sizeof(long));
 }
