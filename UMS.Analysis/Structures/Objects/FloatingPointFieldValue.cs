@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace UMS.Analysis.Structures.Objects;
 
 public struct FloatingPointFieldValue : IFieldValue
@@ -11,5 +13,10 @@ public struct FloatingPointFieldValue : IFieldValue
     public FloatingPointFieldValue(double value)
     {
         Value = value;
+    }
+    
+    public override string ToString()
+    {
+        return Value.ToString(CultureInfo.InvariantCulture);
     }
 }

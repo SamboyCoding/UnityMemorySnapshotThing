@@ -89,10 +89,13 @@ public class LowLevelSnapshotFile : IDisposable
 
         var areHeapAddressesEncoded = SnapshotFormatVersion >= FormatVersion.MemLabelSizeAndHeapIdVersion;
         
+        Console.WriteLine("Loading managed heap sections...");
+        
         ManagedHeapSectionStartAddresses = ReadValueTypeChapter<ulong>(EntryType.ManagedHeapSections_StartAddress, 0, -1).ToArray()
             .Select((a, i) => new ManagedHeapSection(a,  areHeapAddressesEncoded, ReadChapterBody(EntryType.ManagedHeapSections_Bytes, i, 1)))
             .ToArray();
         
+        Console.WriteLine("Sorting managed heap sections...");
         Array.Sort(ManagedHeapSectionStartAddresses);
     }
 
@@ -113,11 +116,6 @@ public class LowLevelSnapshotFile : IDisposable
                 continue;
 
             _chaptersByEntryType[(EntryType)i] = ReadChapterMetadata(entryTypeToChapterOffset[i]);
-
-            if (_chaptersByEntryType[(EntryType)i].AdditionalEntryStorage != null)
-            {
-                Console.WriteLine($"Read additional entry storage for chapter {(EntryType) i}");
-            }
         }
     }
 

@@ -50,4 +50,12 @@ public struct ComplexFieldValue : IFieldValue
         
         Value = mci;
     }
+    
+    public override string ToString()
+    {
+        if (Value == null)
+            return "null";
+
+        return $"{{Managed Class, Address=0x{Value.Value.ObjectAddress:X8}}}";
+    }
 }

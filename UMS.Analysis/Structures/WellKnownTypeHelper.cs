@@ -14,6 +14,7 @@ public class WellKnownTypeHelper
         { "System.Int64", -1 },
         { "System.UInt64", -1 },
         { "System.Byte", -1 },
+        { "System.SByte", -1 },
         { "System.Object", -1 },
         { "System.ValueType", -1 },
         { "System.Enum", -1 },
@@ -37,6 +38,7 @@ public class WellKnownTypeHelper
     public int Int64 {get;}
     public int UInt64 {get;}
     public int Byte {get;}
+    public int SByte {get;}
     public int Object {get;}
     public int ValueType {get;}
     public int Enum {get;}
@@ -77,6 +79,7 @@ public class WellKnownTypeHelper
         Int64 = this["System.Int64"];
         UInt64 = this["System.UInt64"];
         Byte = this["System.Byte"];
+        SByte = this["System.SByte"];
         Object = this["System.Object"];
         ValueType = this["System.ValueType"];
         Enum = this["System.Enum"];

@@ -53,4 +53,9 @@ public struct StringFieldValue : IFieldValue
             
         Value = Encoding.Unicode.GetString(stringData);
     }
+
+    public override string ToString()
+    {
+        return $"\"{Value}\"";
+    }
 }

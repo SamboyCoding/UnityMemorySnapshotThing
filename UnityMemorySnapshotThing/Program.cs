@@ -1,6 +1,8 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using UMS.Analysis;
 using UMS.Analysis.Structures.Objects;
+using UMS.LowLevel.Structures;
 
 namespace UnityMemorySnapshotThing;
 
@@ -22,42 +24,34 @@ public static class Program
         using var file = new SnapshotFile(filePath);
         Console.WriteLine($"Read snapshot file in {(DateTime.Now - start).TotalMilliseconds} ms\n");
         
-        Console.WriteLine($"Snapshot file version: {file.SnapshotFormatVersion}\n");
-        Console.WriteLine($"Snapshot taken on {file.CaptureDateTime}\n");
-        Console.WriteLine($"Target platform: {file.ProfileTargetInfo}\n");
-        Console.WriteLine($"Memory stats: {file.ProfileTargetMemoryStats}\n");
-        Console.WriteLine($"VM info: {file.VirtualMachineInformation}\n");
+        Console.WriteLine($"Snapshot file version: {file.SnapshotFormatVersion} ({(int) file.SnapshotFormatVersion})");
+        Console.WriteLine($"Snapshot taken on {file.CaptureDateTime}");
+        Console.WriteLine($"Target platform: {file.ProfileTargetInfo}");
+        Console.WriteLine($"Memory info at time of snapshot: {file.ProfileTargetMemoryStats}");
         
-        // Console.WriteLine("Querying large dynamic arrays...");
-        // start = DateTime.Now;
-        // Console.WriteLine($"Snapshot contains {file.NativeObjectNames.Length} native objects and {file.TypeDescriptionNames.Length} managed objects");
-        //
-        // var heapSections = file.ManagedHeapSectionBytes;
-        // var heapSectionStartAddresses = file.ManagedHeapSectionStartAddresses;
-        // Console.WriteLine($"Snapshot contains {heapSections.Length} managed heap sections (starting at {heapSectionStartAddresses.Length} start addresses) totalling {heapSections.Sum(b => b.Length)} bytes");
-        //
-        // var fieldIndices = file.TypeDescriptionFieldIndices;
-        // var fieldBytes = file.TypeDescriptionStaticFieldBytes;
-        // Console.WriteLine($"Snapshot contains {fieldIndices.Length} type description-field index mappings, totalling {fieldIndices.Sum(i => i.Length)} field indices, and {fieldBytes.Length} type description-static field bytes");
-        //
-        // var fieldNames = file.FieldDescriptionNames;
-        // Console.WriteLine($"Snapshot contains {fieldNames.Length} field names");
-        //
-        // var fieldOffsets = file.FieldDescriptionOffsets;
-        // Console.WriteLine($"Snapshot contains {fieldOffsets.Length} field offsets");
-        //
-        // var fieldTypes = file.FieldDescriptionTypeIndices;
-        // Console.WriteLine($"Snapshot contains {fieldTypes.Length} field-type mappings");
-        //
-        // //Field indices map type description names to field names
-        // //e.g. field indices element 2 has some values, so those values are the indices into the field name array for type description name 2
-        //
-        // Console.WriteLine($"Querying large dynamic arrays took {(DateTime.Now - start).TotalMilliseconds} ms\n");
+        Console.WriteLine();
+        Console.WriteLine("Finding objects in snapshot...");
 
         file.LoadManagedObjectsFromGcRoots();
         file.LoadManagedObjectsFromStaticFields();
-        
-        FindLeakedUnityObjects(file);
+
+        Console.WriteLine($"Found {file.AllManagedClassInstances.Count()} managed objects.");
+
+        while (true)
+        {
+            Console.Write("\n\nWhat would you like to do now?\n1: Find leaked managed shells.\n2: Dump information on a specific object (by address).\n0: Exit\nChoice: ");
+
+            var choice = Console.ReadLine();
+
+            if (choice == "1")
+                FindLeakedUnityObjects(file);
+            else if (choice == "2")
+                DumpObjectInfo(file);
+            else if(choice == "0")
+                break;
+            else
+                Console.WriteLine("Invalid choice.");
+        }
     }
     
     private static void FindLeakedUnityObjects(SnapshotFile file)
@@ -115,6 +109,56 @@ public static class Program
         ret.AppendLine(str);
         
         File.WriteAllText("leaked_objects.txt", ret.ToString());
+    }
+    
+    private static void DumpObjectInfo(SnapshotFile file)
+    {
+        Console.WriteLine("Enter the memory address of the object you want to dump:");
+        var addressString = Console.ReadLine();
+        
+        if (!ulong.TryParse(addressString, NumberStyles.HexNumber, null, out var address))
+        {
+            Console.WriteLine("Unable to parse address.");
+            return;
+        }
+
+        var nullableObj = file.TryFindManagedClassInstanceByAddress(address);
+        
+        if (nullableObj == null)
+        {
+            Console.WriteLine($"No object at address 0x{address:X8} was found in the snapshot");
+            return;
+        }
+
+        var obj = nullableObj.Value;
+
+        if ((obj.TypeDescriptionFlags & TypeFlags.Array) != 0)
+        {
+            Console.WriteLine("Dumping arrays is not supported, yet.");
+            return;
+        }
+        
+        Console.WriteLine($"Found object at address 0x{address:X8}");
+        Console.WriteLine($"Type: {file.GetTypeName(obj.TypeInfo.TypeIndex)}");
+        Console.WriteLine($"Flags: {obj.TypeDescriptionFlags}");
+        Console.WriteLine("Fields:");
+
+        for (var i = 0; i < obj.Fields.Length; i++)
+        {
+            WriteField(file, obj, i);
+        }
+    }
+
+    private static void WriteField(SnapshotFile file, ManagedClassInstance parent, int index)
+    {
+        var fields = file.GetInstanceFieldInfoForTypeIndex(parent.TypeInfo.TypeIndex);
+        var fieldInfo = fields[index];
+        var fieldValue = parent.Fields[index];
+
+        var fieldName = file.GetFieldName(fieldInfo.FieldIndex);
+        var fieldType = file.GetTypeName(fieldInfo.TypeDescriptionIndex);
+        
+        Console.WriteLine($"    {fieldType} {fieldName} = {fieldValue}");
     }
 
    

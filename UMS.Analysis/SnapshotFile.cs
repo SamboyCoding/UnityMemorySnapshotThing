@@ -112,6 +112,14 @@ public class SnapshotFile : LowLevelSnapshotFile
         Console.WriteLine($"Found {_managedClassInstanceCache.Count - initialCount} additional managed objects from static fields in {(DateTime.Now - start).TotalMilliseconds}ms");
     }
 
+    public ManagedClassInstance? TryFindManagedClassInstanceByAddress(ulong address)
+    {
+        if (_managedClassInstanceCache.TryGetValue(address, out var ret))
+            return ret;
+
+        return _additionalManagedValueTypeInstances.AsParallel().FirstOrDefault(i => i.ObjectAddress == address);
+    }
+
     public ManagedClassInstance? GetOrCreateManagedClassInstance(ulong address, ManagedClassInstance? parent = null, int depth = 0, LoadedReason reason = LoadedReason.GcRoot, int fieldOrArrayIdx = int.MinValue)
     {
         if (_managedClassInstanceCache.TryGetValue(address, out var ret))
