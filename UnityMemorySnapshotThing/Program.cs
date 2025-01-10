@@ -141,6 +141,7 @@ public static class Program
         Console.WriteLine($"Found object at address 0x{address:X8}");
         Console.WriteLine($"Type: {file.GetTypeName(obj.TypeInfo.TypeIndex)}");
         Console.WriteLine($"Flags: {obj.TypeDescriptionFlags}");
+        Console.WriteLine($"Retention path: {obj.GetFirstObservedRetentionPath(file)}");
         Console.WriteLine("Fields:");
 
         for (var i = 0; i < obj.Fields.Length; i++)
