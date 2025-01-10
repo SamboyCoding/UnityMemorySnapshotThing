@@ -28,6 +28,12 @@ public struct ComplexFieldValue : IFieldValue
                 return;
             }
         }
+        
+        if(data.Length < 8)
+        {
+            FailedToParse = true;
+            return;
+        }
             
         //General object handling
         var ptr = BitConverter.ToUInt64(data);
