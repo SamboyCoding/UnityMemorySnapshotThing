@@ -101,6 +101,9 @@ public class SnapshotFile : LowLevelSnapshotFile
                 
                 //If array, then we have a pointer to it and can use the exact same logic as for static non-array fields
                 
+                if(typeFieldBytes.Length - fieldOffset < VirtualMachineInformation.PointerSize)
+                    continue; //Not enough data to read a pointer
+                
                 var fieldPointer = MemoryMarshal.Read<ulong>(typeFieldBytes[fieldOffset..]);
                 if (fieldPointer == 0)
                     continue;
